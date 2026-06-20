@@ -27,5 +27,8 @@ export {
   type VaultHandle,
 } from './registry/registry.js';
 
+// router (federation engine: @vault routing + fan-out - transport-agnostic)
+export { createRouter, UnknownVaultError, type Router } from './router/router.js';
+
 // setup
 export { init, type InitOptions, type InitResult } from './setup/init.js';
