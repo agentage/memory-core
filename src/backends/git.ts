@@ -19,11 +19,18 @@ export interface Git {
 export const createGit = (cwd: string): Git => {
   const exec = (args: string[], opts: GitRunOpts): Promise<string> =>
     new Promise((resolve, reject) => {
-      const env: NodeJS.ProcessEnv = { ...process.env };
-      if (opts.author) {
-        env.GIT_AUTHOR_NAME = opts.author.name;
-        env.GIT_AUTHOR_EMAIL = `${opts.author.id.replace(/[^a-zA-Z0-9._-]/g, '-')}@clients.agentage.io`;
-      }
+      // Always set a full identity so commits never depend on the user's ambient git
+      // config (which is absent on CI runners and on a fresh machine). A supplied author
+      // overrides the author identity; the committer is always the local app identity.
+      const env: NodeJS.ProcessEnv = {
+        ...process.env,
+        GIT_AUTHOR_NAME: opts.author?.name ?? 'agentage memory',
+        GIT_AUTHOR_EMAIL: opts.author
+          ? `${opts.author.id.replace(/[^a-zA-Z0-9._-]/g, '-')}@clients.agentage.io`
+          : 'memory@agentage.io',
+        GIT_COMMITTER_NAME: 'agentage memory',
+        GIT_COMMITTER_EMAIL: 'memory@agentage.io',
+      };
       if (opts.date) {
         env.GIT_AUTHOR_DATE = opts.date;
         env.GIT_COMMITTER_DATE = opts.date;
