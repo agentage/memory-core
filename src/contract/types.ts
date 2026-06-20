@@ -109,6 +109,12 @@ export interface VaultEntry {
 export interface VaultsConfig {
   $schema?: string;
   version: 1;
+  // Base directory whose immediate subfolders become vaults when `autodiscover` is on
+  // (drop a folder in -> it's a vault). Explicit `vaults` entries override/augment it.
+  vaultsDir?: string;
+  autodiscover?: boolean;
+  // Auto-create a missing vault folder (and git-init it) on first use. Default true.
+  autoInit?: boolean;
   default?: string;
-  vaults: Record<string, VaultEntry>;
+  vaults?: Record<string, VaultEntry>;
 }

@@ -17,7 +17,14 @@ export { createLocalBackend, type LocalBackendOptions } from './backends/local-b
 export { createRemoteBackend } from './backends/remote-backend.js';
 
 // config
-export { loadConfig, validateConfig, getConfigDir, ConfigError } from './config/config.js';
+export {
+  loadConfig,
+  validateConfig,
+  getConfigDir,
+  zeroConfig,
+  DEFAULT_VAULT_NAME,
+  ConfigError,
+} from './config/config.js';
 
 // registry
 export {

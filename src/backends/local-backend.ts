@@ -45,6 +45,7 @@ export interface LocalBackendOptions {
   path: string;
   now?: () => string;
   listLimits?: ListLimits; // injectable so truncation is testable without 100s of files
+  autoInit?: boolean; // create the folder + git-init on first use (default true)
 }
 
 // The 6 tools over a local markdown folder kept as a git working copy. Reads/search
@@ -55,12 +56,16 @@ export const createLocalBackend = (opts: LocalBackendOptions): VaultBackend => {
   const root = opts.path;
   const now = opts.now ?? (() => new Date().toISOString());
   const listLimits = opts.listLimits ?? DEFAULT_LIST_LIMITS;
+  const autoInit = opts.autoInit ?? true;
   const git: Git = createGit(root);
 
   let ready: Promise<void> | undefined;
   const ensure = (): Promise<void> => {
     if (!ready) {
       ready = (async () => {
+        if (!autoInit && !existsSync(root)) {
+          throw new Error(`vault path does not exist and autoInit is off: ${root}`);
+        }
         await mkdir(root, { recursive: true });
         if (!existsSync(join(root, '.git'))) await git.run(['init', '-b', 'main']);
       })();

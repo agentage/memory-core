@@ -31,8 +31,21 @@ const entrySchema = z.object({
 const configSchema = z.object({
   $schema: z.string().optional(),
   version: z.literal(1),
+  vaultsDir: z.string().trim().min(1).optional(),
+  autodiscover: z.boolean().optional(),
+  autoInit: z.boolean().optional(),
   default: z.string().optional(),
-  vaults: z.record(z.string(), entrySchema),
+  vaults: z.record(z.string(), entrySchema).optional(),
+});
+
+// Zero-config: with no vaults.json, serve a single default vault under the config dir
+// (created on first write). So `npx @agentage/server-memory` works with no setup.
+export const DEFAULT_VAULT_NAME = 'memory';
+export const zeroConfig = (configDir: string): VaultsConfig => ({
+  version: 1,
+  autoInit: true,
+  default: DEFAULT_VAULT_NAME,
+  vaults: { [DEFAULT_VAULT_NAME]: { path: join(configDir, DEFAULT_VAULT_NAME), mcp: ['local'] } },
 });
 
 // The directory holding vaults.json + auth.json. Honors AGENTAGE_CONFIG_DIR
@@ -51,27 +64,35 @@ export const validateConfig = (raw: unknown): VaultsConfig => {
     throw new ConfigError(key, issue?.message ?? 'invalid config');
   }
   const config = parsed.data as VaultsConfig;
+  const vaults = config.vaults ?? {};
 
-  for (const [name, entry] of Object.entries(config.vaults)) {
+  for (const [name, entry] of Object.entries(vaults)) {
     if (!entry.path && !(entry.origin && entry.origin.length)) {
       throw new ConfigError(`vaults.${name}`, 'needs an origin and/or a path');
     }
   }
-  if (config.default && !config.vaults[config.default]) {
+  if (config.autodiscover && !config.vaultsDir) {
+    throw new ConfigError('autodiscover', 'requires vaultsDir to scan');
+  }
+  // `default` must name an explicit vault; with autodiscover it may name a discovered
+  // folder we can't see here, so only enforce when not auto-discovering.
+  if (config.default && !vaults[config.default] && !config.autodiscover) {
     throw new ConfigError('default', `names a vault that does not exist: "${config.default}"`);
   }
   return config;
 };
 
-// Read + validate ${configDir}/vaults.json. A missing file, bad JSON, or invalid
-// shape all throw ConfigError and load nothing.
+// Read + validate ${configDir}/vaults.json. A MISSING file is not an error - it yields
+// the zero-config default (a single local vault under the config dir), so the server
+// runs with no setup. Bad JSON or an invalid shape still throw ConfigError.
 export const loadConfig = async (opts: { configDir?: string } = {}): Promise<VaultsConfig> => {
-  const file = join(getConfigDir(opts.configDir), 'vaults.json');
+  const dir = getConfigDir(opts.configDir);
+  const file = join(dir, 'vaults.json');
   let text: string;
   try {
     text = await readFile(file, 'utf8');
   } catch {
-    throw new ConfigError('vaults.json', `not found at ${file}`);
+    return zeroConfig(dir);
   }
   let raw: unknown;
   try {

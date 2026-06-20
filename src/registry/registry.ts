@@ -1,3 +1,4 @@
+import { readdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
 import { createLocalBackend } from '../backends/local-backend.js';
@@ -37,19 +38,43 @@ const isAgentage = (entry: VaultEntry): boolean =>
 // Pick the backend for one entry: a `path` -> LocalBackend (git working copy);
 // an agentage origin with no path -> the RemoteBackend. The `mcp` scopes only
 // decide whether/where a backend is surfaced, not which backend it is.
-const backendFor = (entry: VaultEntry): VaultBackend => {
-  if (entry.path) return createLocalBackend({ path: expandPath(entry.path) });
+const backendFor = (entry: VaultEntry, autoInit: boolean): VaultBackend => {
+  if (entry.path) return createLocalBackend({ path: expandPath(entry.path), autoInit });
   if (isAgentage(entry)) return createRemoteBackend('agentage');
   return createRemoteBackend(entry.origin?.[0]?.remote ?? 'unknown');
 };
 
-// Build the typed vault list from a validated config. Synchronous backend
-// construction (LocalBackend init is lazy on first use), so no network at build time.
+// Each immediate subfolder of vaultsDir becomes a local vault (name = folder name).
+// Dotfolders and non-directories are skipped; a missing vaultsDir yields nothing.
+const discoverEntries = async (vaultsDir: string): Promise<Record<string, VaultEntry>> => {
+  const base = expandPath(vaultsDir);
+  let dirents;
+  try {
+    dirents = await readdir(base, { withFileTypes: true });
+  } catch {
+    return {};
+  }
+  const out: Record<string, VaultEntry> = {};
+  for (const d of dirents) {
+    if (d.isDirectory() && !d.name.startsWith('.')) {
+      out[d.name] = { path: join(base, d.name), mcp: ['local'] };
+    }
+  }
+  return out;
+};
+
+// Build the typed vault list from a validated config: explicit `vaults` plus, when
+// `autodiscover` is on, every subfolder of `vaultsDir` (explicit entries win on name
+// collision). Backend construction is lazy, so no network/disk writes at build time.
 export const createRegistry = async (config: VaultsConfig): Promise<VaultRegistry> => {
-  const handles: VaultHandle[] = Object.entries(config.vaults).map(([id, entry]) => ({
+  const autoInit = config.autoInit ?? true;
+  const discovered =
+    config.autodiscover && config.vaultsDir ? await discoverEntries(config.vaultsDir) : {};
+  const merged: Record<string, VaultEntry> = { ...discovered, ...(config.vaults ?? {}) };
+  const handles: VaultHandle[] = Object.entries(merged).map(([id, entry]) => ({
     id,
     mcp: scopesOf(entry),
-    backend: backendFor(entry),
+    backend: backendFor(entry, autoInit),
   }));
   const byId = new Map(handles.map((h) => [h.id, h]));
 

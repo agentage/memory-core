@@ -33,8 +33,8 @@ describe('init', () => {
 
     const config = await loadConfig({ configDir });
     expect(config.default).toBe('work');
-    expect(config.vaults.work.path).toBe(vaultPath);
-    expect(config.vaults.work.mcp).toEqual(['local']);
+    expect(config.vaults?.work?.path).toBe(vaultPath);
+    expect(config.vaults?.work?.mcp).toEqual(['local']);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
