@@ -4,6 +4,10 @@
   "description": "Transport-agnostic engine for agentage Memory: config, vault registry, storage backends, and a federation router.",
   "type": "module",
   "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/agentage/memory-core.git"
+  },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
