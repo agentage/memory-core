@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { ConfigError, loadConfig, validateConfig } from '../src/config/config.js';
 import { tmpConfig, tmpConfigRaw, tmpVault } from './fixtures/index.js';
@@ -10,7 +11,7 @@ describe('config load + validate', () => {
     const config = await loadConfig({ configDir: dir });
     expect(config.version).toBe(1);
     expect(config.default).toBe('work');
-    expect(config.vaults.work.path).toBe(path);
+    expect(config.vaults?.work?.path).toBe(path);
   });
 
   it('accepts an origin-only, a path-only, and a combined entry', () => {
@@ -22,8 +23,8 @@ describe('config load + validate', () => {
         mixed: { path: '~/n', origin: [{ remote: 'git@github.com:me/n.git', interval: 5 }] },
       },
     });
-    expect(Object.keys(config.vaults)).toHaveLength(3);
-    expect(config.vaults.cloud.mcp).toEqual(['local', 'remote']);
+    expect(Object.keys(config.vaults ?? {})).toHaveLength(3);
+    expect(config.vaults?.cloud?.mcp).toEqual(['local', 'remote']);
   });
 
   it('rejects a default that names a missing vault (ConfigError key=default)', () => {
@@ -63,8 +64,11 @@ describe('config load + validate', () => {
     await expect(loadConfig({ configDir: dir })).rejects.toBeInstanceOf(ConfigError);
   });
 
-  it('throws ConfigError when vaults.json is missing', async () => {
+  it('returns the zero-config default when vaults.json is missing (no setup)', async () => {
     const dir = tmpVault(); // a dir with no vaults.json
-    await expect(loadConfig({ configDir: dir })).rejects.toBeInstanceOf(ConfigError);
+    const config = await loadConfig({ configDir: dir });
+    expect(config.default).toBe('memory');
+    expect(config.vaults?.memory?.path).toBe(join(dir, 'memory'));
+    expect(config.vaults?.memory?.mcp).toEqual(['local']);
   });
 });
