@@ -27,5 +27,15 @@ export {
   type VaultHandle,
 } from './registry/registry.js';
 
+// router + server
+export { createRouter, UnknownVaultError, type Router } from './router/router.js';
+export {
+  createMemoryServer,
+  SERVER_NAME,
+  SERVER_TITLE,
+  SERVER_VERSION,
+  type CreateServerOptions,
+} from './server/create-memory-server.js';
+
 // setup
 export { init, type InitOptions, type InitResult } from './setup/init.js';
