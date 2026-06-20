@@ -36,6 +36,7 @@ export {
   SERVER_VERSION,
   type CreateServerOptions,
 } from './server/create-memory-server.js';
+export { loadLocalServer } from './server/local-server.js';
 
 // setup
 export { init, type InitOptions, type InitResult } from './setup/init.js';
