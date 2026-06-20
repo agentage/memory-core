@@ -17,6 +17,7 @@ export default [
     rules: {
       ...tseslint.configs.recommended.rules,
       'prefer-const': 'error',
+      'no-undef': 'off', // TS resolves globals/types; no-undef false-flags type namespaces (NodeJS)
       'no-unused-vars': 'off',
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
     },

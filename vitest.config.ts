@@ -1,6 +1,7 @@
 import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
+  esbuild: { tsconfigRaw: { compilerOptions: { target: 'es2022', useDefineForClassFields: true } } },
   test: {
     include: ['test/**/*.test.ts'],
     testTimeout: 20_000,
