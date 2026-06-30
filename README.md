@@ -29,7 +29,7 @@ const router = createRouter(registry.surfaced('local'), registry.default());
 // router exposes read / write / edit / delete / search / list over the federated vaults.
 ```
 
-A local vault is a plain markdown folder under git: reads and search run against the
+A local vault is a plain markdown folder under git: reads and searches run against the
 working tree (so an edit made in any editor is visible immediately), and every write is
 a commit (delete is a recoverable removal). Search is literal substring, ranked by match
 count; list is a depth-bounded folder tree.
