@@ -34,6 +34,54 @@ working tree (so an edit made in any editor is visible immediately), and every w
 a commit (delete is a recoverable removal). Search is literal substring, ranked by match
 count; list is a depth-bounded folder tree.
 
+## Config: vaults.json
+
+Vaults are declared in `~/.agentage/vaults.json` (validated by `loadConfig`). The published
+JSON Schema for the file ships with the package at `schema/vaults.schema.json`; resolve its
+absolute path with `vaultsSchemaPath()` or read the live object via `buildVaultsJsonSchema()`.
+
+### Account entry shape
+
+A vault that syncs through the **agentage account sync channel** is an ordinary flat entry
+whose `origin` names the reserved `agentage` remote - there are no extra per-entry fields:
+
+```jsonc
+{
+  "vaults": {
+    "personal": {
+      "path": "~/memory/personal",
+      "origin": [{ "remote": "agentage" }], // reserved remote = account channel
+      "mcp": ["local"]
+    }
+  }
+}
+```
+
+`isAccountVault(entry)` is the public predicate for this shape (true when any origin's remote
+is `agentage`). Any other `remote` value is a plain git remote.
+
+### discover[]
+
+`discover` lists directories whose immediate subfolders are candidate account vaults, so
+dropping a folder into a watched root offers it up for sync. It is config shape only - the
+watching and persistence live in the CLI daemon; memory-core just validates and types it.
+
+```jsonc
+{
+  "discover": [
+    {
+      "path": "~/vaults", // root to scan; each subfolder is a candidate
+      "autosync": true, // default true; false pauses discovered vaults
+      "ignore": ["archive"] // subfolder names to never treat as vaults
+    }
+  ]
+}
+```
+
+`scanDiscoverRoots(config)` is a pure helper that enumerates the candidates in the account
+entry shape, skipping names that fail the vault-name rule (`^[A-Za-z0-9_-]{1,64}$`), are
+ignored, or already match a registered vault by name or path.
+
 ## Develop
 
 ```bash

@@ -72,3 +72,28 @@ describe('config load + validate', () => {
     expect(config.vaults?.memory?.mcp).toEqual(['local']);
   });
 });
+
+// discover[]: config-shape only (the CLI daemon does the watching/persistence).
+describe('discover roots', () => {
+  it('accepts discover roots with path, autosync, and ignore, passing them through', () => {
+    const config = validateConfig({
+      version: 1,
+      discover: [{ path: '~/roots', autosync: false, ignore: ['tmp'] }, { path: '/abs/roots' }],
+    });
+    expect(config.discover).toHaveLength(2);
+    expect(config.discover?.[0]?.autosync).toBe(false);
+    expect(config.discover?.[0]?.ignore).toEqual(['tmp']);
+  });
+
+  it('rejects a discover root missing path', () => {
+    expect(() => validateConfig({ version: 1, discover: [{ autosync: true }] })).toThrow(
+      ConfigError
+    );
+  });
+
+  it('rejects a non-string ignore entry', () => {
+    expect(() => validateConfig({ version: 1, discover: [{ path: '~/r', ignore: [5] }] })).toThrow(
+      ConfigError
+    );
+  });
+});

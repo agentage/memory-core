@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "version": {
+      "type": "number",
+      "const": 1
+    },
+    "vaultsDir": {
+      "type": "string",
+      "minLength": 1
+    },
+    "autodiscover": {
+      "type": "boolean"
+    },
+    "autoInit": {
+      "type": "boolean"
+    },
+    "default": {
+      "type": "string"
+    },
+    "vaults": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "origin": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "remote": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "interval": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 9007199254740991
+                },
+                "ignore": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "remote"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "mcp": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "local",
+                "remote"
+              ]
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "discover": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "autosync": {
+            "type": "boolean"
+          },
+          "ignore": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "version"
+  ],
+  "additionalProperties": false,
+  "description": "agentage Memory vaults.json. Structural validation only; semantic refinements (default names a real vault, duplicate discovered names) are enforced by the loader."
+}

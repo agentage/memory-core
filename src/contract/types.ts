@@ -106,6 +106,17 @@ export interface VaultEntry {
   mcp?: McpScope[];
 }
 
+// A discovery root: a directory whose immediate subfolders are candidate account vaults.
+// The CLI daemon watches these and offers/syncs the candidates; memory-core only validates
+// the shape and enumerates candidates (see scanDiscoverRoots).
+export interface DiscoverRoot {
+  path: string;
+  // Sync discovered vaults automatically. Default true; false yields a paused entry.
+  autosync?: boolean;
+  // Immediate subfolder names to never treat as vaults.
+  ignore?: string[];
+}
+
 export interface VaultsConfig {
   $schema?: string;
   version: 1;
@@ -117,4 +128,6 @@ export interface VaultsConfig {
   autoInit?: boolean;
   default?: string;
   vaults?: Record<string, VaultEntry>;
+  // Discovery roots for the agentage account sync channel (CLI daemon watches these).
+  discover?: DiscoverRoot[];
 }

@@ -28,15 +28,38 @@ const entrySchema = z.object({
   mcp: z.array(z.enum(['local', 'remote'])).optional(),
 });
 
-const configSchema = z.object({
-  $schema: z.string().optional(),
-  version: z.literal(1),
-  vaultsDir: z.string().trim().min(1).optional(),
-  autodiscover: z.boolean().optional(),
-  autoInit: z.boolean().optional(),
-  default: z.string().optional(),
-  vaults: z.record(z.string(), entrySchema).optional(),
+const discoverRootSchema = z.object({
+  path: z.string().trim().min(1),
+  autosync: z.boolean().optional(),
+  ignore: z.array(z.string()).optional(),
 });
+
+const configSchema = z
+  .object({
+    $schema: z.string().optional(),
+    version: z.literal(1),
+    vaultsDir: z.string().trim().min(1).optional(),
+    autodiscover: z.boolean().optional(),
+    autoInit: z.boolean().optional(),
+    default: z.string().optional(),
+    vaults: z.record(z.string(), entrySchema).optional(),
+    discover: z.array(discoverRootSchema).optional(),
+  })
+  .describe(
+    'agentage Memory vaults.json. Structural validation only; semantic refinements ' +
+      '(default names a real vault, duplicate discovered names) are enforced by the loader.'
+  );
+
+// The reserved-word rule for a vault name / discovered folder: 1-64 chars of
+// [A-Za-z0-9_-]. Shared by the registry and discovery so ids stay path- and url-safe.
+export const VAULT_NAME_PATTERN = '^[A-Za-z0-9_-]{1,64}$';
+const vaultNameRe = new RegExp(VAULT_NAME_PATTERN);
+export const isValidVaultName = (name: string): boolean => vaultNameRe.test(name);
+
+// The published JSON Schema for vaults.json, derived from the live zod schema so the two
+// never drift. Structural only - loader-only semantic rules are noted in the description.
+export const buildVaultsJsonSchema = (): Record<string, unknown> =>
+  z.toJSONSchema(configSchema, { target: 'draft-2020-12' }) as Record<string, unknown>;
 
 // Zero-config: with no vaults.json, serve a single default vault under the config dir
 // (created on first write). So `npx @agentage/server-memory` works with no setup.

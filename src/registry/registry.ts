@@ -32,7 +32,9 @@ export const expandPath = (p: string): string => {
 
 const scopesOf = (entry: VaultEntry): McpScope[] => entry.mcp ?? ['local'];
 
-const isAgentage = (entry: VaultEntry): boolean =>
+// An account vault syncs through the reserved "agentage" remote - the channel sentinel for
+// the agentage account sync. Any other remote is a plain git remote; local-only is neither.
+export const isAccountVault = (entry: VaultEntry): boolean =>
   !!entry.origin?.some((o) => o.remote === 'agentage');
 
 // Pick the backend for one entry: a `path` -> LocalBackend (git working copy);
@@ -40,7 +42,7 @@ const isAgentage = (entry: VaultEntry): boolean =>
 // decide whether/where a backend is surfaced, not which backend it is.
 const backendFor = (entry: VaultEntry, autoInit: boolean): VaultBackend => {
   if (entry.path) return createLocalBackend({ path: expandPath(entry.path), autoInit });
-  if (isAgentage(entry)) return createRemoteBackend('agentage');
+  if (isAccountVault(entry)) return createRemoteBackend('agentage');
   return createRemoteBackend(entry.origin?.[0]?.remote ?? 'unknown');
 };
 
