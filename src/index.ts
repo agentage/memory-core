@@ -67,3 +67,47 @@ export { createRouter, UnknownVaultError, type Router } from './router/router.js
 
 // setup
 export { init, type InitOptions, type InitResult } from './setup/init.js';
+
+// couch account channel (client): the wire-compatible replicator ported from the shipped
+// obsidian plugin. Transport-agnostic - fetch + FileStore + persistence are injected.
+export type { FetchLike, FetchInit, FetchResponse } from './channel/http.js';
+export {
+  sha256hex,
+  fileId,
+  pathOf,
+  chunkBody,
+  leafIdsOf,
+  encodeFile,
+  contentRev,
+  type LeafDoc,
+  type FileDoc,
+} from './channel/couch-doc.js';
+export {
+  CouchTokenClient,
+  parseCouchToken,
+  type CouchTokenData,
+  type GetBearer,
+} from './channel/couch-token.js';
+export {
+  CouchState,
+  createCouchState,
+  type CouchSyncState,
+  type CouchStatePersistence,
+  type SaveCouchState,
+} from './channel/couch-state.js';
+export {
+  CouchSync,
+  type CouchSyncConfig,
+  type CouchAuthorize,
+  type FileStore,
+} from './channel/couch-sync.js';
+export {
+  HostResolver,
+  parseResolution,
+  channelForVault,
+  buildRepoUrl,
+  type SyncResolution,
+  type CouchVaultResolution,
+  type VaultChannel,
+  type FetchJson,
+} from './channel/resolve-host.js';

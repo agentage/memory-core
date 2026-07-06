@@ -14,9 +14,44 @@ dependency** - the MCP server layer lives in a separate package that builds on t
 | `registry` | one backend per configured vault, surfaced by scope |
 | `router` | federation: `@vault/` addressing + multi-vault fan-out (transport-agnostic) |
 | `setup` | `init` - offline scaffold of `~/.agentage` + a starter vault |
+| `channel` | couch account channel client: a wire-compatible CouchDB replicator |
 
 `VaultBackend` is the single extension seam: new storage capabilities are new backends
 behind the same interface, never new public surface.
+
+## Couch account channel (client)
+
+A memory can sync over one of two channels: **git** (smart-HTTP) or **couch** (a thin
+CouchDB replicator). The `channel` module is the couch client - a faithful, byte-compatible
+port of the replicator shipped in the Obsidian plugin, so every client speaks the same wire
+protocol and the server bridge reassembles any client's writes.
+
+It is transport-agnostic: nothing here imports a UI, an HTTP library, or `node:fs`. Three
+seams are injected so the same code runs in a CLI daemon, an editor extension, or a browser:
+
+- `FetchLike` - the `fetch` slice used (`status` + `json()`); pass `globalThis.fetch`.
+- `FileStore` - `listMarkdown / read / write / remove` over vault-relative POSIX paths.
+- `CouchStatePersistence` - `load / save` for the resume state (the CLI backs it with a JSON file).
+
+Doc model (the public contract the bridge reads): a note becomes leaf docs keyed
+`h:<sha256(64KiB chunk)>` plus a file doc `f:<path>` listing its leaves in order; the body is
+UTF-8 chunked at 64KiB. Pull is a paged `_changes` feed with a resumable cursor; a missing
+leaf aborts the page without advancing the cursor (never a truncated write). Push writes the
+leaves with `_bulk_docs` then PUTs the file doc; an unchanged file skips the network.
+
+Host resolution reads `GET /.well-known/agentage-sync` and `channelForVault(resolution, vault)`
+returns `{ channel: 'couch', endpoint, db, tokenUrl }` or `{ channel: 'git' }`, degrading to
+git when the couch advertisement is absent or partial.
+
+```ts
+import {
+  CouchSync,
+  CouchTokenClient,
+  createCouchState,
+  channelForVault,
+  type FileStore,
+} from '@agentage/memory-core';
+```
 
 ## Public API
 
