@@ -52,6 +52,26 @@ describe('edit', () => {
   it('returns null for a missing path', async () => {
     expect(await seeded().edit({ path: 'ghost.md', body: 'x' })).toBeNull();
   });
+
+  it('no-op edit (str_replace with identical result) returns success', async () => {
+    const b = seeded();
+    const r = await b.edit({
+      path: 'n.md',
+      mode: 'str_replace',
+      old_str: 'world',
+      new_str: 'world',
+    });
+    expect(r).not.toBeNull();
+    expect(r!.path).toBe('n.md');
+    expect((await b.read('n.md'))!.body).toBe('hello world');
+  });
+
+  it('no-op edit (frontmatter merge changes nothing) returns success', async () => {
+    const b = seeded();
+    const r = await b.edit({ path: 'n.md', frontmatter: { type: 'note' } });
+    expect(r).not.toBeNull();
+    expect((await b.read('n.md'))!.frontmatter).toEqual({ type: 'note' });
+  });
 });
 
 // delete.

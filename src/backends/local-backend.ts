@@ -113,8 +113,15 @@ export const createLocalBackend = (opts: LocalBackendOptions): VaultBackend => {
     const abs = join(root, path);
     await mkdir(dirname(abs), { recursive: true });
     await writeFile(abs, serializeDoc(frontmatter, body), 'utf8');
-    const ts = now();
     await git.run(['add', '-A', '--', path]);
+    // No-op write (byte-identical to the committed doc): already in the desired
+    // state, so return the current rev rather than failing on an empty commit.
+    if (!(await git.run(['status', '--porcelain', '--', path])).trim()) {
+      const rev = (await git.run(['rev-parse', 'HEAD'])).trim();
+      const updated = (await git.try(['log', '-1', '--format=%cI', '--', path]))?.trim() || now();
+      return { path, rev, updated };
+    }
+    const ts = now();
     await git.run(['commit', '-m', `${verb}: ${path}`], { date: ts, author });
     const rev = (await git.run(['rev-parse', 'HEAD'])).trim();
     return { path, rev, updated: ts };

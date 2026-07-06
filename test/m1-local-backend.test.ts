@@ -41,6 +41,16 @@ describe('write -> read round-trip', () => {
     expect(view!.frontmatter).toEqual({});
   });
 
+  it('no-op write (byte-identical content) returns success, no new commit', async () => {
+    const b = backend();
+    const first = await b.write({ path: 'n.md', body: 'same', frontmatter: { a: 1 } });
+    const again = await b.write({ path: 'n.md', body: 'same', frontmatter: { a: 1 } });
+    expect(again.path).toBe('n.md');
+    expect(again.rev).toBe(first.rev); // short-circuited before an empty commit
+    expect(again.updated).toMatch(/^\d{4}-\d\d-\d\dT/);
+    expect((await b.read('n.md'))!.body).toBe('same');
+  });
+
   it('materializes the file on disk as plain markdown (files-first)', async () => {
     const path = tmpVault();
     const b = createLocalBackend({ path });
