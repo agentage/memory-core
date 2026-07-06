@@ -1,6 +1,6 @@
 {
   "name": "@agentage/memory-core",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Transport-agnostic engine for agentage Memory: config, vault registry, storage backends, and a federation router.",
   "type": "module",
   "license": "MIT",
