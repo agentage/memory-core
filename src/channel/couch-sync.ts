@@ -40,6 +40,14 @@ export interface FileStore {
 // Mints/caches the couch JWT (CouchTokenClient.token); the header is always "Bearer <jwt>".
 export type CouchAuthorize = () => Promise<string>;
 
+// Outcome of a full syncNow round. Resilient like tick(): a push/pull failure is recorded
+// here (and logged) rather than thrown, so callers can report success/failure without a catch.
+export interface SyncResult {
+  pushed: boolean; // pushAll finished without throwing
+  pulled: boolean; // pullOnce finished without throwing
+  error?: string; // first error message when either side failed
+}
+
 export class CouchSync {
   private pulling = false;
   private suppress = new Set<string>(); // paths being written by a pull (skip their push)
@@ -138,19 +146,63 @@ export class CouchSync {
     }
   }
 
-  async removeFile(path: string): Promise<void> {
+  // Tombstone the file doc at its current couch rev. Terminal outcomes (no retry needed):
+  //   'deleted'  - couch accepted the tombstone, or the doc was already gone
+  //   'conflict' - couch advanced under us (a newer edit) - abandon the delete and let the
+  //                next pull re-deliver that newer version (edit-wins-over-stale-delete).
+  // Throws only on a transport/couch failure so the caller can keep the deletion pending.
+  private async tombstone(path: string): Promise<'deleted' | 'conflict'> {
     const cur = await this.getDoc(fileId(path));
-    if (cur?._rev) {
-      await this.req(`/${encodeURIComponent(fileId(path))}?rev=${encodeURIComponent(cur._rev)}`, {
-        method: 'DELETE',
-      });
+    if (!cur?._rev || cur._deleted) {
       await this.state.dropRev(path);
-      this.log(`delete ${path}`);
+      return 'deleted'; // already absent on couch
+    }
+    // Content moved on since we last synced it -> another device edited it, not the version we
+    // deleted. Never force-delete the fresh rev; drop our rev so pull re-delivers it.
+    const known = this.state.revFor(path);
+    if (known !== undefined && contentRev(cur) !== known) {
+      await this.state.dropRev(path);
+      return 'conflict';
+    }
+    const r = await this.req(
+      `/${encodeURIComponent(fileId(path))}?rev=${encodeURIComponent(cur._rev)}`,
+      { method: 'DELETE' }
+    );
+    if (r.status === 409) {
+      await this.state.dropRev(path); // rev went stale mid-flight -> let pull win
+      return 'conflict';
+    }
+    if (!ok2xx(r.status)) throw new Error(`couch delete ${r.status} for ${path}`);
+    await this.state.dropRev(path);
+    this.log(`delete ${path}`);
+    return 'deleted';
+  }
+
+  // Live delete (mirror of pushFileLive): a transport failure queues the tombstone so the next
+  // tick retries it, a terminal outcome clears any prior queue entry. Never throws.
+  async removeFile(path: string): Promise<void> {
+    try {
+      await this.tombstone(path);
+      await this.state.dequeueDeletion(path);
+    } catch (e) {
+      await this.state.enqueueDeletion(path);
+      this.log(`delete ${path} failed, queued: ${(e as Error).message}`);
+    }
+  }
+
+  // A file we have synced (rev cache) but that is no longer in the file set was deleted
+  // locally - issue its tombstone. A couch doc with no rev-cache entry is new remote content
+  // (pull writes it), so it is never mistaken for a local deletion.
+  private async reconcileDeletions(): Promise<void> {
+    const present = new Set(await this.files.listMarkdown());
+    for (const path of this.state.knownPaths()) {
+      if (!present.has(path)) await this.removeFile(path);
     }
   }
 
   async pushAll(): Promise<void> {
     for (const path of await this.files.listMarkdown()) await this.pushFileLive(path);
+    await this.reconcileDeletions();
   }
 
   // -- pull: couch -> files --------------------------------------------------
@@ -215,6 +267,14 @@ export class CouchSync {
         /* keep queued for the next tick */
       }
     }
+    for (const path of this.state.deletionPaths()) {
+      try {
+        await this.tombstone(path);
+        await this.state.dequeueDeletion(path);
+      } catch {
+        /* keep queued for the next tick */
+      }
+    }
   }
 
   async tick(): Promise<void> {
@@ -226,8 +286,24 @@ export class CouchSync {
     }
   }
 
-  async syncNow(): Promise<void> {
-    await this.pushAll();
-    await this.pullOnce();
+  // Resilient like tick(): a push or pull failure is recorded, not thrown, so a one-shot sync
+  // never rejects and the caller still learns which side failed.
+  async syncNow(): Promise<SyncResult> {
+    const out: SyncResult = { pushed: false, pulled: false };
+    try {
+      await this.pushAll();
+      out.pushed = true;
+    } catch (e) {
+      out.error = (e as Error).message;
+      this.log(`push failed (will retry): ${(e as Error).message}`);
+    }
+    try {
+      await this.pullOnce();
+      out.pulled = true;
+    } catch (e) {
+      out.error ??= (e as Error).message;
+      this.log(`pull failed (will retry): ${(e as Error).message}`);
+    }
+    return out;
   }
 }
