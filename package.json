@@ -1,9 +1,9 @@
 {
   "name": "@agentage/memory-core",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Transport-agnostic engine for agentage Memory: config, vault registry, storage backends, and a federation router.",
   "type": "module",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/agentage/memory-core.git"

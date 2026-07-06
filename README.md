@@ -43,3 +43,7 @@ npm run verify    # type-check + lint + format:check + test + build
 ```
 
 Node 22+, TypeScript (strict, ESM), Vitest, ESLint + Prettier.
+
+## License
+
+MIT - see [LICENSE](./LICENSE).
