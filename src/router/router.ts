@@ -10,6 +10,8 @@ import type {
   WriteResult,
 } from '../contract/types.js';
 import type { VaultHandle } from '../registry/registry.js';
+import { assertNoRestricted, frontmatterText } from '../contract/restricted-data.js';
+import { clampView } from '../contract/read-budget.js';
 
 const MAX_FANOUT_LIMIT = 50;
 const DEFAULT_LIMIT = 20;
@@ -73,14 +75,19 @@ export const createRouter = (surfaced: VaultHandle[], defaultHandle?: VaultHandl
 
     async read(path) {
       const { handle, rest } = resolve(path);
-      return handle.backend.read(rest);
+      const view = await handle.backend.read(rest);
+      return view ? clampView(view) : null;
     },
     async write(input, author) {
+      assertNoRestricted(`${input.body}\n${frontmatterText(input.frontmatter)}`);
       const { handle, rest } = resolve(input.path);
       const r = await handle.backend.write({ ...input, path: rest }, author);
       return { ...r, path: tag(handle.id, r.path) };
     },
     async edit(input, author) {
+      assertNoRestricted(
+        [input.body, input.new_str, frontmatterText(input.frontmatter)].filter(Boolean).join('\n')
+      );
       const { handle, rest } = resolve(input.path);
       const r = await handle.backend.edit({ ...input, path: rest }, author);
       return r ? { ...r, path: tag(handle.id, r.path) } : null;

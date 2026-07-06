@@ -1,0 +1,41 @@
+// Bounds the body a read returns to the model. A memory can be up to the store's per-doc
+// cap; returning it verbatim floods the model's context, so read output is clamped to a
+// fixed byte budget with a marker line making clear the stored file is complete. The clamp
+// lives on the read path (not the store), so an edit's internal full-body read is untouched.
+
+import type { MemoryView } from './types.js';
+
+// Max UTF-8 bytes of body returned by a read. Not a storage limit - only bounds model output.
+export const READ_BODY_BUDGET = 64 * 1024;
+
+export interface ClampedBody {
+  body: string;
+  truncated: boolean;
+  totalBytes: number;
+}
+
+// Clamp `body` to at most `max` UTF-8 bytes, cutting on a codepoint boundary (a partial
+// trailing multi-byte sequence is dropped, never emitted as U+FFFD).
+export const clampBody = (body: string, max: number = READ_BODY_BUDGET): ClampedBody => {
+  const totalBytes = Buffer.byteLength(body, 'utf8');
+  if (totalBytes <= max) return { body, truncated: false, totalBytes };
+  const sliced = Buffer.from(body, 'utf8').subarray(0, max).toString('utf8').replace(/�+$/u, '');
+  return { body: sliced, truncated: true, totalBytes };
+};
+
+// The marker appended after a clamped body. States the shown/total byte counts and that
+// the stored file is intact, so a model (or user) knows the note continues on disk.
+export const truncationMarker = (shownBytes: number, totalBytes: number): string =>
+  `\n\n[Truncated for display: showing the first ${shownBytes} of ${totalBytes} bytes. The stored memory file is complete and unchanged.]`;
+
+// Return a read view whose body is clamped to the budget (marker appended when cut). All
+// other fields pass through, so structuredContent stays a valid MemoryView.
+export const clampView = (view: MemoryView, max: number = READ_BODY_BUDGET): MemoryView => {
+  const clamped = clampBody(view.body, max);
+  if (!clamped.truncated) return view;
+  return {
+    ...view,
+    body:
+      clamped.body + truncationMarker(Buffer.byteLength(clamped.body, 'utf8'), clamped.totalBytes),
+  };
+};

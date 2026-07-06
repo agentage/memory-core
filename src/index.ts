@@ -11,6 +11,24 @@ export {
   makeSnippet,
 } from './contract/memory-doc.js';
 
+// restricted-data screen (secrets/credentials refused on write+edit)
+export {
+  findRestricted,
+  frontmatterText,
+  restrictedMessage,
+  assertNoRestricted,
+  RestrictedContentError,
+} from './contract/restricted-data.js';
+
+// read-output size budget
+export {
+  READ_BODY_BUDGET,
+  clampBody,
+  clampView,
+  truncationMarker,
+  type ClampedBody,
+} from './contract/read-budget.js';
+
 // the extension seam + backends
 export type { VaultBackend, BackendCapabilities } from './backends/vault-backend.js';
 export { createLocalBackend, type LocalBackendOptions } from './backends/local-backend.js';
