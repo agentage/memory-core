@@ -85,3 +85,56 @@ describe('CouchState - pending pushes', () => {
     expect((await createCouchState(b.persistence)).pendingPaths()).toEqual(['x.md']);
   });
 });
+
+describe('CouchState - pending deletions (0.3.1)', () => {
+  it('enqueues without duplicates, dequeues, and persists real changes only', async () => {
+    const b = backing();
+    const s = await createCouchState(b.persistence);
+    expect(s.deletionPaths()).toEqual([]);
+    await s.enqueueDeletion('d.md');
+    await s.enqueueDeletion('d.md'); // dup -> no write
+    await s.enqueueDeletion('e.md');
+    expect(s.deletionPaths().sort()).toEqual(['d.md', 'e.md']);
+    expect(b.save).toHaveBeenCalledTimes(2);
+    expect(b.get()?.deletions).toEqual(['d.md', 'e.md']);
+    await s.dequeueDeletion('d.md');
+    await s.dequeueDeletion('d.md'); // absent -> no write
+    expect(s.deletionPaths()).toEqual(['e.md']);
+    expect(b.save).toHaveBeenCalledTimes(3);
+  });
+
+  it('round-trips the full new shape and rehydrates deletions on restart', async () => {
+    const b = backing();
+    const s = await createCouchState(b.persistence);
+    await s.setCursor('4');
+    await s.setRev('a.md', 'r1');
+    await s.enqueue('p.md');
+    await s.enqueueDeletion('x.md');
+    expect(b.get()).toEqual({
+      cursor: '4',
+      revs: { 'a.md': 'r1' },
+      pending: ['p.md'],
+      deletions: ['x.md'],
+    });
+    expect((await createCouchState(b.persistence)).deletionPaths()).toEqual(['x.md']);
+  });
+
+  it('loads a 0.3.0 snapshot that has no deletions field', async () => {
+    const old: CouchSyncState = { cursor: '7', revs: { 'a.md': 'r' }, pending: ['p.md'] };
+    const s = await createCouchState({ load: async () => old, save: async () => {} });
+    expect(s.deletionPaths()).toEqual([]); // absent field -> empty set, no crash
+    expect(s.getCursor()).toBe('7');
+    expect(s.pendingPaths()).toEqual(['p.md']);
+    expect(s.revFor('a.md')).toBe('r');
+  });
+
+  it('exposes known (rev-cached) paths as the local-deletion disambiguator', async () => {
+    const b = backing();
+    const s = await createCouchState(b.persistence);
+    await s.setRev('a.md', 'r1');
+    await s.setRev('b.md', 'r2');
+    expect(s.knownPaths().sort()).toEqual(['a.md', 'b.md']);
+    await s.dropRev('a.md');
+    expect(s.knownPaths()).toEqual(['b.md']);
+  });
+});

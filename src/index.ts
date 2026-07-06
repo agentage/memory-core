@@ -100,6 +100,7 @@ export {
   type CouchSyncConfig,
   type CouchAuthorize,
   type FileStore,
+  type SyncResult,
 } from './channel/couch-sync.js';
 export {
   HostResolver,

@@ -270,3 +270,140 @@ describe('pull applies a delete', () => {
     expect(state.getCursor()).toBe('9');
   });
 });
+
+// A file doc the reconciler will read back to disambiguate a delete (content matches the cache).
+const fdoc = (path: string, rev: string, leaves: string[]) => ({
+  _id: `f:${path}`,
+  _rev: rev,
+  type: 'file',
+  path,
+  size: 1,
+  leaves,
+});
+
+describe('delete durability - a failed tombstone is queued and eventually lands', () => {
+  it('queues the deletion on a transport failure, then flushes it on tick()', async () => {
+    const store = new FakeFileStore();
+    const state = await throwaway();
+    await state.setRev('gone.md', 'h:g1'); // we had synced this file
+    const couch = makeSync(store, state);
+
+    handler = () => {
+      throw new Error('network down');
+    };
+    await couch.removeFile('gone.md'); // never throws
+    expect(state.deletionPaths()).toEqual(['gone.md']);
+    expect(state.revFor('gone.md')).toBe('h:g1'); // rev kept so the retry can disambiguate
+
+    handler = (url, method) => {
+      if (url.includes('/_changes')) return res(200, { results: [], last_seq: '0' });
+      if (url.includes('f%3Agone.md') && method === 'DELETE') return res(200, { ok: true });
+      if (url.includes('f%3Agone.md')) return res(200, fdoc('gone.md', '3-r', ['h:g1']));
+      return res(404, {});
+    };
+    await couch.tick();
+    expect(state.deletionPaths()).toEqual([]); // tombstone landed -> dequeued
+    expect(state.revFor('gone.md')).toBeUndefined(); // and its rev cache dropped
+  });
+});
+
+describe('local-deletion reconciliation via the rev cache', () => {
+  it('tombstones a known path absent from the file set, leaving present files untouched', async () => {
+    const store = new FakeFileStore({ 'keep.md': 'K' }); // present
+    const state = await throwaway();
+    await state.setRev('gone.md', 'h:g1'); // known but absent -> a local deletion
+    const couch = makeSync(store, state);
+
+    const deleted: string[] = [];
+    handler = (url, method) => {
+      if (url.includes('_bulk_docs')) return res(200, []);
+      if (url.includes('f%3Agone.md') && method === 'DELETE') {
+        deleted.push('gone.md');
+        return res(200, { ok: true });
+      }
+      if (url.includes('f%3Agone.md')) return res(200, fdoc('gone.md', '2-x', ['h:g1']));
+      if (url.includes('f%3Akeep.md') && method === 'PUT') return res(200, { ok: true });
+      return res(404, {}); // keep.md GET -> not on server yet
+    };
+    await couch.pushAll();
+    expect(deleted).toEqual(['gone.md']); // known-but-absent -> tombstoned
+    expect(state.revFor('gone.md')).toBeUndefined(); // rev-cache entry dropped
+    expect(state.revFor('keep.md')).toBeDefined(); // present file kept (pushed, not deleted)
+  });
+});
+
+describe('pull-delete does not resurface as a phantom local deletion', () => {
+  it('a pull-applied delete drops the rev so the next pushAll issues no tombstone', async () => {
+    const store = new FakeFileStore({ 'gone.md': 'BODY' });
+    const state = await throwaway();
+    await state.setRev('gone.md', 'h:old'); // we had synced it
+    const couch = makeSync(store, state);
+
+    handler = (url) => {
+      if (url.includes('/_changes'))
+        return res(200, { results: [{ id: 'f:gone.md', deleted: true }], last_seq: '5' });
+      return res(404, {});
+    };
+    await couch.pullOnce();
+    expect(store.content('gone.md')).toBeUndefined();
+    expect(state.revFor('gone.md')).toBeUndefined(); // pull dropped the rev cache
+
+    let deleteCalls = 0;
+    handler = (url, method) => {
+      if (url.includes('/_changes')) return res(200, { results: [], last_seq: '5' });
+      if (method === 'DELETE') deleteCalls++;
+      return res(404, {});
+    };
+    await couch.pushAll();
+    expect(deleteCalls).toBe(0); // not re-detected as a local deletion
+  });
+});
+
+describe('tombstone-409 - edit wins over a stale delete', () => {
+  it('abandons the deletion on a 409 and lets the next pull restore the newer doc', async () => {
+    const store = new FakeFileStore(); // file already gone locally
+    const state = await throwaway();
+    await state.setRev('race.md', 'h:v1'); // we knew v1
+    const couch = makeSync(store, state);
+
+    handler = (url, method) => {
+      if (url.includes('f%3Arace.md') && method === 'DELETE')
+        return res(409, { error: 'conflict' });
+      if (url.includes('f%3Arace.md')) return res(200, fdoc('race.md', '2-a', ['h:v1']));
+      return res(404, {});
+    };
+    await couch.pushAll();
+    expect(state.deletionPaths()).toEqual([]); // 409 is terminal -> never queued
+    expect(state.revFor('race.md')).toBeUndefined(); // rev dropped -> not re-detected
+
+    handler = (url) => {
+      if (url.includes('/_changes'))
+        return res(200, {
+          results: [{ id: 'f:race.md', doc: fdoc('race.md', '3-b', ['h:v2']) }],
+          last_seq: '7',
+        });
+      if (url.includes('h%3Av2')) return res(200, { data: 'NEW' });
+      return res(404, {});
+    };
+    await couch.pullOnce();
+    expect(store.content('race.md')).toBe('NEW'); // newer edit restored, not force-deleted
+  });
+});
+
+describe('syncNow is resilient like tick()', () => {
+  it('records a pull failure instead of throwing, and reports push/pull status', async () => {
+    const store = new FakeFileStore({ 'n.md': 'X' });
+    const state = await throwaway();
+    const couch = makeSync(store, state);
+    handler = (url, method) => {
+      if (url.includes('/_changes')) throw new Error('pull boom'); // pull fails
+      if (url.includes('_bulk_docs')) return res(200, []);
+      if (url.includes('f%3A') && method === 'PUT') return res(200, { ok: true });
+      return res(404, {}); // f: GET -> not on server yet
+    };
+    const result = await couch.syncNow(); // must not throw
+    expect(result.pushed).toBe(true);
+    expect(result.pulled).toBe(false);
+    expect(result.error).toBe('pull boom');
+  });
+});
