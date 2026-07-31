@@ -1,0 +1,58 @@
+import type {
+  EditInput,
+  ListQuery,
+  ListResult,
+  MemoryView,
+  SearchQuery,
+  SearchResult,
+  WriteAuthor,
+  WriteInput,
+  WriteResult,
+} from './types.js';
+
+// Every change - own verb or out-of-band (git push received, human file edit,
+// pull) - surfaces as one StoreEvent. Observers are fire-and-forget: they run
+// after the change persisted and can never fail or delay the operation.
+export interface StoreEvent {
+  type: 'write' | 'edit' | 'delete' | 'external';
+  paths: string[];
+  version: string;
+  author?: WriteAuthor;
+  at: string;
+}
+
+export type StoreObserver = (e: StoreEvent) => void;
+
+export interface StoreCapabilities {
+  mutable: boolean;
+  // History exists and versions are durable (git: yes; in-memory: no).
+  versioned: boolean;
+  // Content can change outside this API (server: push; local: editor/pull).
+  externallyMutable: boolean;
+  search: 'lexical' | 'indexed' | 'none';
+}
+
+// THE contract. One instance = one vault. Storage-agnostic: git, remote HTTP,
+// and in-memory stores all implement this same shape; swapping stores swaps
+// search behavior with them. Multi-tenancy is a resolver above, never in here.
+export interface VaultStore extends VaultReader, VaultWriter {
+  // Opaque change token; null = empty vault. Changes iff content changed.
+  version(): Promise<string | null>;
+  // Detect out-of-band changes since the last seen version and emit them as
+  // `external` events. No-op ([]) when nothing changed or nothing external can happen.
+  refresh(): Promise<StoreEvent[]>;
+  subscribe(obs: StoreObserver): () => void;
+  capabilities(): StoreCapabilities;
+}
+
+export interface VaultReader {
+  read(path: string): Promise<MemoryView | null>;
+  list(q: ListQuery): Promise<ListResult>;
+  search(q: SearchQuery): Promise<SearchResult>;
+}
+
+export interface VaultWriter {
+  write(i: WriteInput, author?: WriteAuthor): Promise<WriteResult>;
+  edit(i: EditInput, author?: WriteAuthor): Promise<WriteResult | null>;
+  delete(path: string): Promise<boolean>;
+}
