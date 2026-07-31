@@ -77,3 +77,5 @@ export {
   type MemoryStoreOptions,
   type SeedFile,
 } from './stores/memory-store.js';
+export { createBareGitStore, type BareGitStoreOptions } from './stores/bare-git/bare-git-store.js';
+export { validateBareRepoTree, type TreeViolation } from './stores/bare-git/validate-tree.js';
