@@ -14,7 +14,7 @@ import {
   createStatsView,
   createWorkingCopyGitStore,
   type VaultStore,
-} from '../src/index.js';
+} from '../../src/index.js';
 
 const SCALE = Number(process.env.PERF_SCALE ?? 1000);
 // The local (working-copy) store is O(vault size) on list/search by design - a
@@ -160,7 +160,7 @@ describe(`non-functional @ ${SCALE} notes`, () => {
   }, 60_000);
 
   it('indexed store: cold reindex bounded, warm search beats the grep budget', async () => {
-    const { createIndexedGitStore } = await import('../src/index.js');
+    const { createIndexedGitStore } = await import('../../src/index.js');
     const indexed = createIndexedGitStore(bareDir, join(bareDir, '..', '.index'));
     const t0 = performance.now();
     const first = await indexed.search({ query: 'galaxy', limit: 50 });

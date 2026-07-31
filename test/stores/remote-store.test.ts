@@ -5,10 +5,10 @@ import { createServer, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { contractSuite } from '../src/conformance/contract-suite.js';
-import { securitySuite } from '../src/conformance/security-suite.js';
-import { createBareGitStore, createRemoteStore } from '../src/index.js';
-import { createStoreHandler } from '../src/stores/remote/store-server.js';
+import { contractSuite } from '../../src/conformance/contract-suite.js';
+import { securitySuite } from '../../src/conformance/security-suite.js';
+import { createBareGitStore, createRemoteStore } from '../../src/index.js';
+import { createStoreHandler } from '../../src/stores/remote/store-server.js';
 
 const TOKEN = 'test-token-123';
 const servers: Server[] = [];
