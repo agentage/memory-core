@@ -37,4 +37,11 @@ jobs:
         if: steps.gate.outputs.exists == 'false'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm publish
+        # A concurrent run (dispatch + push double-fire) can win the race after our
+        # gate check; if the version exists afterwards, that IS success.
+        run: |
+          if ! npm publish; then
+            VERSION=$(node -p "require('./package.json').version")
+            npm view "@agentage/store-core@${VERSION}" version >/dev/null 2>&1 \
+              && echo "published by a concurrent run - ok" || exit 1
+          fi
