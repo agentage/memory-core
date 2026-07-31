@@ -2,8 +2,14 @@
   "name": "@agentage/store-core",
   "version": "0.1.0",
   "description": "Storage-agnostic vault store contract + implementations for agentage Memory",
-  "private": true,
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/agentage/store-core.git"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
   "engines": {
     "node": ">=22"
   },
@@ -22,7 +28,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
-    "verify": "npm run type-check && npm run lint && npm run format:check && npm run test && npm run build"
+    "verify": "npm run type-check && npm run lint && npm run format:check && npm run test && npm run build",
+    "prepublishOnly": "npm run verify"
   },
   "dependencies": {
     "yaml": "^2.6.0"
