@@ -79,3 +79,10 @@ export {
 } from './stores/memory-store.js';
 export { createBareGitStore, type BareGitStoreOptions } from './stores/bare-git/bare-git-store.js';
 export { validateBareRepoTree, type TreeViolation } from './stores/bare-git/validate-tree.js';
+export { createStatsView, type VaultStats } from './stores/bare-git/stats-view.js';
+export {
+  createDerivedCache,
+  type CachePolicy,
+  type DerivedCache,
+  type DerivedView,
+} from './contract/derived.js';
