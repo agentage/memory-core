@@ -158,4 +158,15 @@ describe(`non-functional @ ${SCALE} notes`, () => {
     const quiet = await time(20, () => bare.refresh());
     record('bare refresh (quiet) avg', quiet.reduce((a, x) => a + x, 0) / quiet.length, 5);
   }, 60_000);
+
+  it('indexed store: cold reindex bounded, warm search beats the grep budget', async () => {
+    const { createIndexedGitStore } = await import('../src/index.js');
+    const indexed = createIndexedGitStore(bareDir, join(bareDir, '..', '.index'));
+    const t0 = performance.now();
+    const first = await indexed.search({ query: 'galaxy', limit: 50 });
+    record('indexed cold search incl. full reindex', performance.now() - t0, 15_000);
+    expect(first.results.length).toBe(50);
+    const warm = await time(10, () => indexed.search({ query: 'galaxy', limit: 50 }));
+    record('indexed search p95 (warm)', quantile(warm, 0.95), 50);
+  }, 60_000);
 });
