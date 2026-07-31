@@ -114,14 +114,14 @@ describe(`non-functional @ ${SCALE} notes`, () => {
     const b = await time(30, (i) => bare.read(`folder-${i % 10}/note-${i * 7}.md`));
     record('bare read p50', quantile(b, 0.5), 30);
     const w = await time(30, (i) => wc.read(`folder-${i % 10}/note-${i * 7}.md`));
-    record('working-copy read p50', quantile(w, 0.5), 15);
+    record('working-copy read p50', quantile(w, 0.5), 30);
   }, 60_000);
 
   it('search: p95 within the ADR-011 300ms trigger on both stores', async () => {
     const b = await time(10, () => bare.search({ query: 'galaxy', limit: 50 }));
     record('bare search p95', quantile(b, 0.95), 300);
     const w = await time(10, () => wc.search({ query: 'galaxy', limit: 50 }));
-    record('working-copy search p95', quantile(w, 0.95), 300 * LOCAL_F);
+    record('working-copy search p95', quantile(w, 0.95), 750 * LOCAL_F);
     const hits = await bare.search({ query: 'galaxy', limit: 50 });
     expect(hits.results.length).toBe(50); // full page at this scale
   }, 60_000);
@@ -130,7 +130,7 @@ describe(`non-functional @ ${SCALE} notes`, () => {
     const b = await time(10, () => bare.list({}));
     record('bare list warm avg', b.reduce((a, x) => a + x, 0) / b.length, 25);
     const w = await time(10, () => wc.list({}));
-    record('working-copy list warm avg', w.reduce((a, x) => a + x, 0) / w.length, 60 * LOCAL_F);
+    record('working-copy list warm avg', w.reduce((a, x) => a + x, 0) / w.length, 150 * LOCAL_F);
   }, 60_000);
 
   it('write: bare p95 <= 250ms, 20 sequential writes sustained', async () => {

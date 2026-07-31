@@ -18,8 +18,11 @@ export const contractSuite = (t: ConformanceTarget): void => {
     let events: StoreEvent[];
     beforeEach(async () => {
       store = await t.make();
-      events = [];
-      store.subscribe((e) => events.push(e));
+      // Capture the ARRAY, not the binding: a slow prior test's still-draining
+      // async writes must leak into their own array, never the current test's.
+      const captured: StoreEvent[] = [];
+      events = captured;
+      store.subscribe((e) => captured.push(e));
     });
 
     describe('write + read', () => {
@@ -169,6 +172,8 @@ export const contractSuite = (t: ConformanceTarget): void => {
         expect((await store.search({ query: '   ', limit: 10 })).results).toHaveLength(0);
       });
 
+      // 55+ real writes: give slow CI runners room - a mid-test timeout would
+      // leave queued writes draining into the next test.
       it('paginates with a cursor and caps the page size at 50', async () => {
         for (let i = 0; i < 55; i++) await store.write({ path: `bulk/n${i}.md`, body: 'pear' });
         const page1 = await store.search({ query: 'pear', limit: 100 });
@@ -177,7 +182,7 @@ export const contractSuite = (t: ConformanceTarget): void => {
         const page2 = await store.search({ query: 'pear', limit: 100, cursor: page1.nextCursor });
         expect(page2.results).toHaveLength(5);
         expect(page2.nextCursor).toBeUndefined();
-      });
+      }, 120_000);
     });
 
     describe('version + refresh + events', () => {
