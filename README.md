@@ -12,13 +12,13 @@ All semantics are single-sourced in `src/contract/` and shared by every store: e
 
 ## Implementations
 
-| Store                               | Status                                  | Search                           |
-| ----------------------------------- | --------------------------------------- | -------------------------------- |
-| `createMemoryStore`                 | ✅ this repo                            | in-process scan (reference impl) |
-| `createBareGitStore` (server)       | planned - harvest from `web/store-core` | `git grep` HEAD                  |
-| `createWorkingCopyGitStore` (local) | planned - harvest from `memory-core`    | `git grep` worktree              |
-| `createIndexedGitStore`             | planned                                 | SQLite FTS5, grep fallback       |
-| `createRemoteStore`                 | planned                                 | server-side via /v1              |
+| Store                               | Status                               | Search                           |
+| ----------------------------------- | ------------------------------------ | -------------------------------- |
+| `createMemoryStore`                 | ✅ this repo                         | in-process scan (reference impl) |
+| `createBareGitStore` (server)       | ✅ this repo                         | `git grep` HEAD                  |
+| `createWorkingCopyGitStore` (local) | planned - harvest from `memory-core` | `git grep` worktree              |
+| `createIndexedGitStore`             | planned                              | SQLite FTS5, grep fallback       |
+| `createRemoteStore`                 | planned                              | server-side via /v1              |
 
 ## Conformance
 
