@@ -10,6 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       PERF_SCALE: '5000'
+      FUZZ_RUNS: '500'
+      FUZZ_DIFF_RUNS: '25'
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
