@@ -84,6 +84,7 @@ export {
   createWorkingCopyGitStore,
   type WorkingCopyStoreOptions,
 } from './stores/working-copy/working-copy-store.js';
+export { createIndexedGitStore } from './stores/indexed/indexed-git-store.js';
 export {
   createDerivedCache,
   type CachePolicy,
