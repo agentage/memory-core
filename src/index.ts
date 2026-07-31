@@ -81,6 +81,10 @@ export { createBareGitStore, type BareGitStoreOptions } from './stores/bare-git/
 export { validateBareRepoTree, type TreeViolation } from './stores/bare-git/validate-tree.js';
 export { createStatsView, type VaultStats } from './stores/bare-git/stats-view.js';
 export {
+  createWorkingCopyGitStore,
+  type WorkingCopyStoreOptions,
+} from './stores/working-copy/working-copy-store.js';
+export {
   createDerivedCache,
   type CachePolicy,
   type DerivedCache,
