@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { applyEdit } from '../src/contract/edit.js';
-import { parseDoc, serializeDoc } from '../src/contract/memory-doc.js';
-import { parseMemoryId, safePath } from '../src/contract/paths.js';
+import { applyEdit } from '../../src/contract/edit.js';
+import { parseDoc, serializeDoc } from '../../src/contract/memory-doc.js';
+import { parseMemoryId, safePath } from '../../src/contract/paths.js';
 
 describe('memory-doc codec', () => {
   it('round-trips frontmatter + body', () => {

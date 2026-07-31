@@ -4,9 +4,9 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { contractSuite } from '../src/conformance/contract-suite.js';
-import { securitySuite } from '../src/conformance/security-suite.js';
-import { createIndexedGitStore } from '../src/index.js';
+import { contractSuite } from '../../src/conformance/contract-suite.js';
+import { securitySuite } from '../../src/conformance/security-suite.js';
+import { createIndexedGitStore } from '../../src/index.js';
 
 const runGit = (
   dir: string,

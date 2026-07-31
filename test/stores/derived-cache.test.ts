@@ -2,10 +2,10 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { createDerivedCache, type DerivedView } from '../src/contract/derived.js';
-import type { VaultStore } from '../src/contract/vault-store.js';
-import { createBareGitStore, createMemoryStore } from '../src/index.js';
-import { createStatsView } from '../src/stores/bare-git/stats-view.js';
+import { createDerivedCache, type DerivedView } from '../../src/contract/derived.js';
+import type { VaultStore } from '../../src/contract/vault-store.js';
+import { createBareGitStore, createMemoryStore } from '../../src/index.js';
+import { createStatsView } from '../../src/stores/bare-git/stats-view.js';
 
 const tick = (): Promise<void> => new Promise((r) => setTimeout(r, 15));
 

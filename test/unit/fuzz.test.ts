@@ -19,7 +19,7 @@ import {
   serializeDoc,
   strReplace,
   type VaultStore,
-} from '../src/index.js';
+} from '../../src/index.js';
 
 const RUNS = Number(process.env.FUZZ_RUNS ?? 75);
 const DIFF_RUNS = Number(process.env.FUZZ_DIFF_RUNS ?? 3);

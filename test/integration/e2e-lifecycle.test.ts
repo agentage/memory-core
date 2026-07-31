@@ -13,7 +13,7 @@ import {
   createStatsView,
   validateBareRepoTree,
   type StoreEvent,
-} from '../src/index.js';
+} from '../../src/index.js';
 
 const sh = (args: string[], env: Record<string, string>, input?: string): Promise<string> =>
   new Promise((resolve, reject) => {
