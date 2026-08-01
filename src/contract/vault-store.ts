@@ -1,5 +1,7 @@
 import type {
   EditInput,
+  ListNotesQuery,
+  ListNotesResult,
   ListQuery,
   ListResult,
   MemoryView,
@@ -46,8 +48,12 @@ export interface VaultStore extends VaultReader, VaultWriter {
 }
 
 export interface VaultReader {
-  read(path: string): Promise<MemoryView | null>;
+  // clamp defaults to true (model-safe 64KB body budget); pass { clamp: false }
+  // for full-body reads (REST note read, export flows).
+  read(path: string, opts?: { clamp?: boolean }): Promise<MemoryView | null>;
   list(q: ListQuery): Promise<ListResult>;
+  // Flat, cursor-paged enumeration - cost bounded by limit, never by vault size.
+  listNotes(q?: ListNotesQuery): Promise<ListNotesResult>;
   search(q: SearchQuery): Promise<SearchResult>;
 }
 

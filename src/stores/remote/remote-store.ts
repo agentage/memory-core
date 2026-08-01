@@ -5,6 +5,8 @@
 
 import type {
   EditInput,
+  ListNotesQuery,
+  ListNotesResult,
   ListQuery,
   ListResult,
   MemoryView,
@@ -59,8 +61,10 @@ export const createRemoteStore = (
   };
 
   return {
-    read: (path: string): Promise<MemoryView | null> => call('read', { path }),
+    read: (path: string, opts?: { clamp?: boolean }): Promise<MemoryView | null> =>
+      call('read', { path, opts }),
     list: (query: ListQuery): Promise<ListResult> => call('list', { query }),
+    listNotes: (query?: ListNotesQuery): Promise<ListNotesResult> => call('listNotes', { query }),
     search: (query: SearchQuery): Promise<SearchResult> => call('search', { query }),
     write: (input: WriteInput, author?: WriteAuthor): Promise<WriteResult> =>
       call('write', { input, author }),

@@ -4,6 +4,7 @@
 // list 0 warm - version checks are fs reads, bulk doc reads are one batch.
 
 import { applyEdit } from '../../contract/edit.js';
+import { pageNotes } from '../../contract/notes.js';
 import { deriveTags, parseDoc, serializeDoc, titleFromPath } from '../../contract/memory-doc.js';
 import { assertSafePath, safePath } from '../../contract/paths.js';
 import { clampView, ensureSize } from '../../contract/read-budget.js';
@@ -12,6 +13,8 @@ import { rankAndPage } from '../../contract/search.js';
 import { buildTree, DEFAULT_LIST_DEPTH, normalizeFolder } from '../../contract/tree.js';
 import type {
   EditInput,
+  ListNotesQuery,
+  ListNotesResult,
   ListQuery,
   ListResult,
   MemoryView,
@@ -145,13 +148,13 @@ export const createBareGitStore = (repoDir: string, opts: BareGitStoreOptions = 
       });
     },
 
-    async read(path: string): Promise<MemoryView | null> {
+    async read(path: string, opts?: { clamp?: boolean }): Promise<MemoryView | null> {
       if (!safePath(path) || !git.repoExists()) return null;
       await detectDrift();
       const raw = await readRaw(path);
       if (raw === undefined) return null;
       const { frontmatter, body } = parseDoc(raw);
-      return clampView({
+      const view: MemoryView = {
         path,
         title: titleFromPath(path),
         frontmatter,
@@ -159,7 +162,22 @@ export const createBareGitStore = (repoDir: string, opts: BareGitStoreOptions = 
         tags: deriveTags(frontmatter, body),
         updated: (await getSnap())?.mtimes.get(path) ?? now(),
         deleted: false,
-      });
+        sizeBytes: Buffer.byteLength(raw, 'utf8'),
+      };
+      return opts?.clamp === false ? view : clampView(view);
+    },
+
+    async listNotes(q?: ListNotesQuery): Promise<ListNotesResult> {
+      if (!git.repoExists()) return { notes: [], total: 0 };
+      await detectDrift();
+      const s = await getSnap();
+      if (!s) return { notes: [], total: 0 };
+      return pageNotes(
+        s.paths,
+        q,
+        (page) => git.batchRead('HEAD', page),
+        (p) => s.mtimes.get(p) ?? null
+      );
     },
 
     async delete(path: string): Promise<boolean> {

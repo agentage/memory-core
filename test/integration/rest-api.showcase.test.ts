@@ -54,14 +54,27 @@ const createV1 = (reposRoot: string) => {
     return entry;
   };
 
-  // GET /v1/vaults/{vault}/notes/{path}
+  // GET /v1/vaults/{vault}/notes/{path} - full body + exact sizeBytes (the live
+  // NOTE_READ_KEYS wire: body, frontmatter, path, sizeBytes, tags, title, updated).
   const getNote = async (userId: string, vault: string, path: string): Promise<Json> => {
     const v = vaultOf(userId, vault);
     if (!v || !(await v.store.version())) return err(404, 'not_found', 'no such vault');
-    const view = await v.store.read(path);
+    const view = await v.store.read(path, { clamp: false });
     if (!view) return err(404, 'not_found', 'no such note');
-    const { path: p, title, frontmatter, body, tags, updated } = view;
-    return { status: 200, body: { path: p, title, frontmatter, body, tags, updated } };
+    const { path: p, title, frontmatter, body, tags, updated, sizeBytes } = view;
+    return { status: 200, body: { path: p, title, frontmatter, body, tags, updated, sizeBytes } };
+  };
+
+  // GET /v1/vaults/{vault}/notes - the live flat wire: { notes, nextCursor }.
+  const getNotes = async (
+    userId: string,
+    vault: string,
+    q: { folder?: string; limit?: number; cursor?: string } = {}
+  ): Promise<Json> => {
+    const v = vaultOf(userId, vault);
+    if (!v || !(await v.store.version())) return err(404, 'not_found', 'no such vault');
+    const { notes, nextCursor } = await v.store.listNotes(q);
+    return { status: 200, body: { notes, nextCursor: nextCursor ?? null } };
   };
 
   // GET /v1/vaults/{vault}/search?q=
@@ -87,7 +100,7 @@ const createV1 = (reposRoot: string) => {
     return { status: 200, body: await v.store.list({ folder }) };
   };
 
-  return { getNote, search, getVault, listNotes, _seed: vaultOf };
+  return { getNote, getNotes, search, getVault, listNotes, _seed: vaultOf };
 };
 
 // ---- the proof ----
@@ -146,5 +159,35 @@ describe('rest /v1 showcase', () => {
   it('lists the folder tree', async () => {
     const res = await api.listNotes('carol03', 'main');
     expect((res.body as { files: number }).files).toBe(2);
+  });
+
+  it('flat notes wire matches the live /v1 pin: { notes, nextCursor }, NoteMeta keys', async () => {
+    const res = await api.getNotes('carol03', 'main', { limit: 1 });
+    const body = res.body as { notes: Record<string, unknown>[]; nextCursor: string | null };
+    expect(Object.keys(body).sort()).toEqual(['nextCursor', 'notes']);
+    expect(Object.keys(body.notes[0]!).sort()).toEqual([
+      'excerpt',
+      'path',
+      'sizeBytes',
+      'tags',
+      'title',
+      'updated',
+    ]);
+    expect(body.nextCursor).toBeTruthy();
+    const page2 = await api.getNotes('carol03', 'main', { limit: 1, cursor: body.nextCursor! });
+    expect((page2.body as { nextCursor: null }).nextCursor).toBeNull();
+  });
+
+  it('note read carries the full body and exact stored size', async () => {
+    const res = await api.getNote('carol03', 'main', 'notes/alpha.md');
+    expect(Object.keys(res.body as object).sort()).toEqual([
+      'body',
+      'frontmatter',
+      'path',
+      'sizeBytes',
+      'tags',
+      'title',
+      'updated',
+    ]);
   });
 });

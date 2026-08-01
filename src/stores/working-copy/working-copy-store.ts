@@ -9,6 +9,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { applyEdit } from '../../contract/edit.js';
+import { pageNotes } from '../../contract/notes.js';
 import { deriveTags, parseDoc, serializeDoc, titleFromPath } from '../../contract/memory-doc.js';
 import { assertSafePath, safePath } from '../../contract/paths.js';
 import { clampView, ensureSize } from '../../contract/read-budget.js';
@@ -17,6 +18,8 @@ import { countOccurrences, rankAndPage } from '../../contract/search.js';
 import { buildTree, DEFAULT_LIST_DEPTH, normalizeFolder } from '../../contract/tree.js';
 import type {
   EditInput,
+  ListNotesQuery,
+  ListNotesResult,
   ListQuery,
   ListResult,
   MemoryView,
@@ -212,7 +215,7 @@ export const createWorkingCopyGitStore = (
       });
     },
 
-    async read(path: string): Promise<MemoryView | null> {
+    async read(path: string, opts?: { clamp?: boolean }): Promise<MemoryView | null> {
       // No drift walk here: the worktree file IS the truth, so read cost stays
       // independent of vault size. Drift events fire from list/search/refresh.
       if (!safePath(path)) return null;
@@ -223,7 +226,7 @@ export const createWorkingCopyGitStore = (
         (s) => s.mtimeMs,
         () => undefined
       );
-      return clampView({
+      const view: MemoryView = {
         path,
         title: titleFromPath(path),
         frontmatter,
@@ -231,7 +234,30 @@ export const createWorkingCopyGitStore = (
         tags: deriveTags(frontmatter, body),
         updated: mtime ? new Date(mtime).toISOString() : now(),
         deleted: false,
-      });
+        sizeBytes: Buffer.byteLength(raw, 'utf8'),
+      };
+      return opts?.clamp === false ? view : clampView(view);
+    },
+
+    async listNotes(q?: ListNotesQuery): Promise<ListNotesResult> {
+      await detectDrift();
+      const state = lastState ?? new Map<string, { mtimeMs: number }>();
+      return pageNotes(
+        state.keys(),
+        q,
+        async (page) => {
+          const out = new Map<string, string>();
+          for (const p of page) {
+            const raw = await readRaw(p);
+            if (raw !== undefined) out.set(p, raw);
+          }
+          return out;
+        },
+        (p) => {
+          const s = state.get(p);
+          return s ? new Date(s.mtimeMs).toISOString() : null;
+        }
+      );
     },
 
     async delete(path: string): Promise<boolean> {

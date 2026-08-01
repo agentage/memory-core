@@ -54,6 +54,33 @@ export interface MemoryView {
   tags: string[];
   updated: string;
   deleted: boolean;
+  // Exact stored byte size of the raw doc (pre-clamp), matching `git clone` on disk.
+  sizeBytes?: number;
+}
+
+// Flat, cursor-paged enumeration (the REST /notes surface; `list` is the UI tree).
+// depth = subfolder levels included below `folder`: 0 = direct notes only (the
+// dashboard files wire), -1 = full tree (default; the /v1 wire), N = N levels.
+export interface ListNotesQuery {
+  folder?: string;
+  depth?: number;
+  limit?: number;
+  cursor?: string;
+}
+
+export interface NoteMeta {
+  path: string;
+  title: string;
+  tags: string[];
+  excerpt: string;
+  sizeBytes: number;
+  updated: string | null;
+}
+
+export interface ListNotesResult {
+  notes: NoteMeta[];
+  total: number;
+  nextCursor?: string;
 }
 
 export interface TreeFile {

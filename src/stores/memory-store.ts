@@ -4,6 +4,7 @@
 // store follows: validate -> guard -> persist -> emit.
 
 import { applyEdit } from '../contract/edit.js';
+import { pageNotes } from '../contract/notes.js';
 import { deriveTags, serializeDoc, titleFromPath } from '../contract/memory-doc.js';
 import { assertSafePath, safePath } from '../contract/paths.js';
 import { clampView, ensureSize } from '../contract/read-budget.js';
@@ -12,6 +13,8 @@ import { countOccurrences, rankAndPage } from '../contract/search.js';
 import { buildTree, DEFAULT_LIST_DEPTH, normalizeFolder } from '../contract/tree.js';
 import type {
   EditInput,
+  ListNotesQuery,
+  ListNotesResult,
   ListQuery,
   ListResult,
   MemoryView,
@@ -103,11 +106,11 @@ export const createMemoryStore = (
       return persist(input.path, next.frontmatter, next.body, 'edit', author);
     },
 
-    async read(path: string): Promise<MemoryView | null> {
+    async read(path: string, opts?: { clamp?: boolean }): Promise<MemoryView | null> {
       if (!safePath(path)) return null;
       const doc = docs.get(path);
       if (!doc) return null;
-      return clampView({
+      const view: MemoryView = {
         path,
         title: titleFromPath(path),
         frontmatter: doc.frontmatter,
@@ -115,7 +118,24 @@ export const createMemoryStore = (
         tags: deriveTags(doc.frontmatter, doc.body),
         updated: doc.updated,
         deleted: false,
-      });
+        sizeBytes: Buffer.byteLength(serializeDoc(doc.frontmatter, doc.body), 'utf8'),
+      };
+      return opts?.clamp === false ? view : clampView(view);
+    },
+
+    async listNotes(q?: ListNotesQuery): Promise<ListNotesResult> {
+      return pageNotes(
+        docs.keys(),
+        q,
+        async (page) =>
+          new Map(
+            page.map((p) => {
+              const d = docs.get(p)!;
+              return [p, serializeDoc(d.frontmatter, d.body)] as [string, string];
+            })
+          ),
+        (p) => docs.get(p)?.updated ?? null
+      );
     },
 
     async delete(path: string): Promise<boolean> {

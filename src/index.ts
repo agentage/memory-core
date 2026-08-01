@@ -63,6 +63,7 @@ export {
   normalizeFolder,
   type ListLimits,
 } from './contract/tree.js';
+export { DEFAULT_NOTES_LIMIT, MAX_NOTES_LIMIT, pageNotes } from './contract/notes.js';
 export {
   countOccurrences,
   decodeCursor,
