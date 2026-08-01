@@ -3,6 +3,8 @@
 // back in the response and re-emit locally, so hooks/derived caches on the
 // client see the same stream they would see in-process.
 
+import { StoreError, type StoreErrorCode } from '../../contract/errors.js';
+import { WIRE_VERSION } from './store-server.js';
 import type {
   EditInput,
   ListNotesQuery,
@@ -22,9 +24,11 @@ export interface RemoteStoreOptions {
   timeoutMs?: number;
 }
 
+export type TokenProvider = string | (() => string | Promise<string>);
+
 export const createRemoteStore = (
   baseUrl: string,
-  token: string,
+  token: TokenProvider,
   opts: RemoteStoreOptions = {}
 ): VaultStore => {
   const observers = new Set<StoreObserver>();
@@ -42,9 +46,14 @@ export const createRemoteStore = (
   };
 
   const call = async <T>(verb: string, args: Record<string, unknown> = {}): Promise<T> => {
+    const bearer = typeof token === 'function' ? await token() : token;
     const res = await fetch(`${baseUrl.replace(/\/$/, '')}/${verb}`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${bearer}`,
+        'x-store-wire': WIRE_VERSION,
+      },
       body: JSON.stringify(args),
       signal: AbortSignal.timeout(opts.timeoutMs ?? 10_000),
     });
@@ -54,7 +63,13 @@ export const createRemoteStore = (
       error?: { message: string };
     };
     if (!res.ok || payload.error) {
-      throw new Error(payload.error?.message ?? `remote store: HTTP ${res.status}`);
+      const message = payload.error?.message ?? `remote store: HTTP ${res.status}`;
+      const code = (payload.error as { code?: string } | undefined)?.code;
+      // Typed codes survive the wire so consumers map identically local or remote.
+      if (code === 'invalid_path' || code === 'doc_too_large' || code === 'restricted') {
+        throw new StoreError(code as StoreErrorCode, message);
+      }
+      throw new Error(message);
     }
     if (payload.events?.length) emit(payload.events);
     return payload.value as T;

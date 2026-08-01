@@ -9,6 +9,7 @@ import type { SearchQuery, SearchResult } from './types.js';
 
 // Hard cap per page - a pathological limit can't unbound the scan.
 export const MAX_SEARCH_LIMIT = 50;
+export const DEFAULT_SEARCH_LIMIT = 20;
 
 export const decodeCursor = (cursor?: string): number =>
   cursor ? Number(Buffer.from(cursor, 'base64').toString()) || 0 : 0;
@@ -41,7 +42,7 @@ export const rankAndPage = (hits: RankedHit[], query: SearchQuery): SearchResult
     .filter((h) => (scope ? h.path.startsWith(`${scope}/`) : true))
     .filter((h) => (query.tags?.length ? query.tags.every((t) => h.tags.includes(t)) : true))
     .sort((a, b) => b.score - a.score || b.updated.localeCompare(a.updated));
-  const limit = Math.min(query.limit, MAX_SEARCH_LIMIT);
+  const limit = Math.min(query.limit ?? DEFAULT_SEARCH_LIMIT, MAX_SEARCH_LIMIT);
   const offset = decodeCursor(query.cursor);
   const results = scored.slice(offset, offset + limit).map((h) => ({
     path: h.path,

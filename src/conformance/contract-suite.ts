@@ -227,6 +227,13 @@ export const contractSuite = (t: ConformanceTarget): void => {
 
       // 55+ real writes: give slow CI runners room - a mid-test timeout would
       // leave queued writes draining into the next test.
+      it('defaults the page size to 20 when limit is omitted', async () => {
+        for (let i = 0; i < 25; i++) await store.write({ path: `dflt/n${i}.md`, body: 'mango' });
+        const res = await store.search({ query: 'mango' });
+        expect(res.results).toHaveLength(20);
+        expect(res.nextCursor).toBeTruthy();
+      }, 120_000);
+
       it('paginates with a cursor and caps the page size at 50', async () => {
         for (let i = 0; i < 55; i++) await store.write({ path: `bulk/n${i}.md`, body: 'pear' });
         const page1 = await store.search({ query: 'pear', limit: 100 });

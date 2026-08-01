@@ -3,6 +3,7 @@
 // fixed byte budget with a marker making clear the stored file is complete. The clamp
 // lives on the read path only - an edit's internal full-body read is untouched.
 
+import { StoreError } from './errors.js';
 import type { MemoryView } from './types.js';
 
 // Max UTF-8 bytes of body returned by a read. Not a storage limit - only bounds output.
@@ -14,7 +15,10 @@ export const MAX_DOC_BYTES = 8 * 1024 * 1024;
 export const ensureSize = (content: string): void => {
   const bytes = Buffer.byteLength(content, 'utf8');
   if (bytes > MAX_DOC_BYTES) {
-    throw new Error(`document is ${bytes} bytes, over the ${MAX_DOC_BYTES}-byte cap`);
+    throw new StoreError(
+      'doc_too_large',
+      `document is ${bytes} bytes, over the ${MAX_DOC_BYTES}-byte cap`
+    );
   }
 };
 

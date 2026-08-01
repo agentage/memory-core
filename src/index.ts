@@ -64,8 +64,10 @@ export {
   type ListLimits,
 } from './contract/tree.js';
 export { DEFAULT_NOTES_LIMIT, MAX_NOTES_LIMIT, pageNotes } from './contract/notes.js';
+export { StoreError, storeErrorCode, type StoreErrorCode } from './contract/errors.js';
 export {
   countOccurrences,
+  DEFAULT_SEARCH_LIMIT,
   decodeCursor,
   encodeCursor,
   MAX_SEARCH_LIMIT,
@@ -86,7 +88,11 @@ export {
   type WorkingCopyStoreOptions,
 } from './stores/working-copy/working-copy-store.js';
 export { createIndexedGitStore } from './stores/indexed/indexed-git-store.js';
-export { createRemoteStore, type RemoteStoreOptions } from './stores/remote/remote-store.js';
+export {
+  createRemoteStore,
+  type RemoteStoreOptions,
+  type TokenProvider,
+} from './stores/remote/remote-store.js';
 export { createStoreHandler } from './stores/remote/store-server.js';
 export {
   createDerivedCache,

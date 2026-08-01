@@ -27,7 +27,8 @@ export interface SearchQuery {
   query: string;
   folder?: string;
   tags?: string[];
-  limit: number;
+  // Default 20, hard cap 50 (matches the live MCP tool schema default).
+  limit?: number;
   cursor?: string;
 }
 
