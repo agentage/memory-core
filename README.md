@@ -79,11 +79,12 @@ createRemoteStore(baseUrl, token); // the contract over HTTP (server half: creat
 Every implementation must pass the shared kit - a store that passes is guaranteed swappable:
 
 ```ts
-import { contractSuite } from '../src/conformance/contract-suite.js';
-import { securitySuite } from '../src/conformance/security-suite.js';
+// vitest is an optional peer dependency - run the kit inside your own suite
+import { contractSuite, securitySuite, HOSTILE_PATHS } from '@agentage/store-core/conformance';
 
 contractSuite({ name: 'my-store', make: () => createMyStore() });
 securitySuite({ name: 'my-store', make: () => createMyStore() });
+// HOSTILE_PATHS / RESTRICTED_BODIES / BENIGN_BODIES: fire the same corpus at your HTTP/MCP edge
 ```
 
 ## Test layout & CI
