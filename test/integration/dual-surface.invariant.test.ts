@@ -36,10 +36,7 @@ const rest = {
     };
   },
   search: (store: VaultStore, query: string) => store.search({ query, limit: 10 }),
-  getNotes: async (store: VaultStore) => {
-    const { notes, nextCursor } = await store.listNotes();
-    return { notes, nextCursor: nextCursor ?? null };
-  },
+  getNotes: (store: VaultStore) => store.list({}), // squashed: /v1 notes IS the tool shape
 };
 
 describe('dual-surface invariant: MCP structuredContent === REST body', () => {
@@ -78,19 +75,11 @@ describe('dual-surface invariant: MCP structuredContent === REST body', () => {
     });
   });
 
-  it('enumeration: NoteMeta on REST and TreeFile on MCP describe the same files', async () => {
+  it('listing: EXACTLY the same object on both surfaces (squashed)', async () => {
     const tool = await mcp.memory__list(store);
     const api = await rest.getNotes(store);
-    const toolPaths = JSON.stringify(tool.structuredContent)
-      .match(/notes\/[ab]\.md/g)!
-      .sort();
-    expect([...new Set(toolPaths)]).toEqual(api.notes.map((n) => n.path).sort());
-    for (const note of api.notes) {
-      const view = (await store.read(note.path))!;
-      expect(note.title).toBe(view.title);
-      expect(note.tags).toEqual(view.tags);
-      expect(note.sizeBytes).toBe(view.sizeBytes);
-    }
+    expect(tool.structuredContent).toEqual(api);
+    expect('nextCursor' in api).toBe(false); // backward capable by default
   });
 
   it('errors: one taxonomy, both renderings derivable from the same code', async () => {

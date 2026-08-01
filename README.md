@@ -71,7 +71,7 @@ createRemoteStore(baseUrl, token); // the contract over HTTP (server half: creat
 ## Consumer templates (start here when integrating)
 
 - **MCP tool layer** (memory-mcp shape - token ctx, `@vault/` routing, isError results, store-swap proof): `test/integration/mcp-tools.showcase.test.ts`
-- **/v1 REST handlers** (resource JSON, `{error:{code,message}}` envelope, derived stats): `test/integration/rest-api.showcase.test.ts`
+- **/v1 REST handlers** (resource JSON, `{error:{code,message}}` envelope, derived stats; `/notes` = the memory__list shape, cursor-drainable on opt-in): `test/integration/rest-api.showcase.test.ts`
 - **Full lifecycle on one vault** (push -> events -> derived state -> restart): `test/integration/e2e-lifecycle.test.ts`
 
 ## Conformance

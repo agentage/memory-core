@@ -3,6 +3,7 @@
 // Stores supply candidate hits however they find them (grep, index, scan); the
 // ranking and paging contract never diverges between implementations.
 
+import { decodeCursor, encodeCursor } from './cursor.js';
 import { makeSnippet, titleFromPath } from './memory-doc.js';
 import { normalizeFolder } from './tree.js';
 import type { SearchQuery, SearchResult } from './types.js';
@@ -11,10 +12,7 @@ import type { SearchQuery, SearchResult } from './types.js';
 export const MAX_SEARCH_LIMIT = 50;
 export const DEFAULT_SEARCH_LIMIT = 20;
 
-export const decodeCursor = (cursor?: string): number =>
-  cursor ? Number(Buffer.from(cursor, 'base64').toString()) || 0 : 0;
-export const encodeCursor = (offset: number): string =>
-  Buffer.from(String(offset)).toString('base64');
+export { decodeCursor, encodeCursor } from './cursor.js';
 
 // Non-overlapping, case-insensitive, fixed-string occurrence count (git grep -o -i -F).
 export const countOccurrences = (text: string, query: string): number => {

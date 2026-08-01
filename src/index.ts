@@ -60,10 +60,11 @@ export {
   buildTree,
   DEFAULT_LIST_DEPTH,
   DEFAULT_LIST_LIMITS,
+  MAX_LIST_LIMIT,
   normalizeFolder,
+  pageTree,
   type ListLimits,
 } from './contract/tree.js';
-export { DEFAULT_NOTES_LIMIT, MAX_NOTES_LIMIT, pageNotes } from './contract/notes.js';
 export { StoreError, storeErrorCode, type StoreErrorCode } from './contract/errors.js';
 export {
   createStorePool,

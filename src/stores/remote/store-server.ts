@@ -8,17 +8,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { storeErrorCode } from '../../contract/errors.js';
 import type { StoreEvent, VaultStore } from '../../contract/vault-store.js';
 
-const VERBS = new Set([
-  'read',
-  'list',
-  'listNotes',
-  'search',
-  'write',
-  'edit',
-  'delete',
-  'version',
-  'refresh',
-]);
+const VERBS = new Set(['read', 'list', 'search', 'write', 'edit', 'delete', 'version', 'refresh']);
 export const WIRE_VERSION = '1';
 const MAX_BODY = 32 * 1024 * 1024; // fits an 8MB doc with JSON escaping headroom
 
@@ -81,8 +71,6 @@ export const createStoreHandler = (
             return store.read(args.path as string, args.opts as never);
           case 'list':
             return store.list(args.query ?? {});
-          case 'listNotes':
-            return store.listNotes(args.query as never);
           case 'search':
             return store.search(args.query as never);
           case 'write':

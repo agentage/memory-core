@@ -21,6 +21,10 @@ export interface ListQuery {
   folder?: string;
   depth?: number;
   tags?: string[];
+  // Cursor paging over the name-sorted file set: each page is a tree-shaped
+  // window; `files` always reports the TOTAL in scope. Default limit 500.
+  limit?: number;
+  cursor?: string;
 }
 
 export interface SearchQuery {
@@ -59,31 +63,6 @@ export interface MemoryView {
   sizeBytes?: number;
 }
 
-// Flat, cursor-paged enumeration (the REST /notes surface; `list` is the UI tree).
-// depth = subfolder levels included below `folder`: 0 = direct notes only (the
-// dashboard files wire), -1 = full tree (default; the /v1 wire), N = N levels.
-export interface ListNotesQuery {
-  folder?: string;
-  depth?: number;
-  limit?: number;
-  cursor?: string;
-}
-
-export interface NoteMeta {
-  path: string;
-  title: string;
-  tags: string[];
-  excerpt: string;
-  sizeBytes: number;
-  updated: string | null;
-}
-
-export interface ListNotesResult {
-  notes: NoteMeta[];
-  total: number;
-  nextCursor?: string;
-}
-
 export interface TreeFile {
   type: 'file';
   path: string;
@@ -108,6 +87,7 @@ export interface ListResult {
   entries: TreeEntry[];
   truncated: boolean;
   files: number;
+  nextCursor?: string;
 }
 
 export interface SearchHit {
