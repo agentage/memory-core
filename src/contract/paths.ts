@@ -1,3 +1,5 @@
+import { StoreError } from './errors.js';
+
 // memoryId = "<userId>/<vault>". Each segment is allowlisted (url-safe charset +
 // length bound) before it becomes a path component, so traversal, control chars,
 // extra slashes, and `.git`-style names are all rejected.
@@ -30,5 +32,5 @@ export const safePath = (p: string): boolean =>
   !p.split('/').some((seg) => RESERVED_SEGMENTS.has(seg.toLowerCase()));
 
 export const assertSafePath = (p: string): void => {
-  if (!safePath(p)) throw new Error(`invalid path: ${JSON.stringify(p)}`);
+  if (!safePath(p)) throw new StoreError('invalid_path', `invalid path: ${JSON.stringify(p)}`);
 };

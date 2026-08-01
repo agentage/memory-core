@@ -1,3 +1,5 @@
+import { StoreError } from './errors.js';
+
 // High-precision screen for the data classes a memory app must not store: access
 // credentials/secrets, one-time codes, government identifiers, and payment-card numbers.
 // Deliberately NARROW - known key shapes, a labeled assignment with a non-placeholder
@@ -80,9 +82,9 @@ export const restrictedMessage = (kind: string): string =>
   `Refused: this appears to contain ${kind}. Memory stores durable notes and knowledge, not secrets, credentials, one-time codes, or payment/government identifiers - remove it and try again.`;
 
 // Thrown by the write/edit paths when input carries a restricted data class.
-export class RestrictedContentError extends Error {
+export class RestrictedContentError extends StoreError {
   constructor(public readonly kind: string) {
-    super(restrictedMessage(kind));
+    super('restricted', restrictedMessage(kind));
     this.name = 'RestrictedContentError';
   }
 }

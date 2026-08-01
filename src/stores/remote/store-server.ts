@@ -5,7 +5,7 @@
 // and no-op semantics survive the wire.
 
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { RestrictedContentError } from '../../contract/restricted-data.js';
+import { storeErrorCode } from '../../contract/errors.js';
 import type { StoreEvent, VaultStore } from '../../contract/vault-store.js';
 
 const VERBS = new Set([
@@ -19,6 +19,7 @@ const VERBS = new Set([
   'version',
   'refresh',
 ]);
+export const WIRE_VERSION = '1';
 const MAX_BODY = 32 * 1024 * 1024; // fits an 8MB doc with JSON escaping headroom
 
 const readBody = (req: IncomingMessage): Promise<string> =>
@@ -56,12 +57,18 @@ export const createStoreHandler = (
 
   return async (req, res) => {
     const send = (status: number, payload: unknown): void => {
-      res.writeHead(status, { 'content-type': 'application/json' });
+      res.writeHead(status, { 'content-type': 'application/json', 'x-store-wire': WIRE_VERSION });
       res.end(JSON.stringify(payload));
     };
     try {
       if (opts.token && req.headers.authorization !== `Bearer ${opts.token}`) {
         return send(401, { error: { code: 'unauthorized', message: 'bad token' } });
+      }
+      const wire = req.headers['x-store-wire'];
+      if (wire !== undefined && wire !== WIRE_VERSION) {
+        return send(400, {
+          error: { code: 'wire_version', message: `unsupported wire version: ${String(wire)}` },
+        });
       }
       const verb = (req.url ?? '').replace(/^\//, '');
       if (req.method !== 'POST' || !VERBS.has(verb)) {
@@ -92,7 +99,7 @@ export const createStoreHandler = (
       });
       send(200, { value, events });
     } catch (err) {
-      const code = err instanceof RestrictedContentError ? 'restricted' : 'store_error';
+      const code = storeErrorCode(err) ?? 'store_error';
       send(422, { error: { code, message: err instanceof Error ? err.message : String(err) } });
     }
   };

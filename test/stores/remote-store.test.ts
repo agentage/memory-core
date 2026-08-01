@@ -96,6 +96,56 @@ describe('remote-store: wire specifics', () => {
     await expect(wrong.read('a.md')).rejects.toThrow(/bad token/);
   });
 
+  it('accepts an async token provider (expiring OAuth tokens)', async () => {
+    const base = await mkdtemp(join(tmpdir(), 'remote-provider-'));
+    const backing = createBareGitStore(join(base, 'v.git'));
+    const server = createServer(createStoreHandler(backing, { token: 'fresh' }));
+    servers.push(server);
+    await new Promise<void>((r) => server.listen(0, r));
+    const address = server.address();
+    const port = typeof address === 'object' && address ? address.port : 0;
+    let mints = 0;
+    const s = createRemoteStore(`http://127.0.0.1:${port}`, async () => {
+      mints++;
+      return 'fresh';
+    });
+    await s.write({ path: 'a.md', body: 'x' });
+    expect((await s.read('a.md'))!.body).toBe('x');
+    expect(mints).toBeGreaterThanOrEqual(2); // minted per call, not cached forever
+  });
+
+  it('rejects an unknown wire version with a typed error', async () => {
+    const s = await make();
+    await s.write({ path: 'w.md', body: 'x' });
+    const url = (s as unknown as { _url?: string })._url; // not exposed - use raw fetch below
+    void url;
+    const base = await mkdtemp(join(tmpdir(), 'remote-wire-'));
+    const backing = createBareGitStore(join(base, 'v.git'));
+    const server = createServer(createStoreHandler(backing, { token: 'tk' }));
+    servers.push(server);
+    await new Promise<void>((r) => server.listen(0, r));
+    const address = server.address();
+    const port = typeof address === 'object' && address ? address.port : 0;
+    const res = await fetch(`http://127.0.0.1:${port}/version`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: 'Bearer tk',
+        'x-store-wire': '99',
+      },
+      body: '{}',
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: { code: string } }).error.code).toBe('wire_version');
+  });
+
+  it('typed error codes survive the wire', async () => {
+    const s = await make();
+    await expect(s.write({ path: '../escape.md', body: 'x' })).rejects.toMatchObject({
+      code: 'invalid_path',
+    });
+  });
+
   it('canonical error strings survive the wire (str_replace contract)', async () => {
     const s = await make();
     await s.write({ path: 'n.md', body: 'alpha' });
