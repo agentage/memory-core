@@ -41,7 +41,12 @@ export const rankAndPage = (hits: RankedHit[], query: SearchQuery): SearchResult
     .filter((h) => h.score > 0)
     .filter((h) => (scope ? h.path.startsWith(`${scope}/`) : true))
     .filter((h) => (query.tags?.length ? query.tags.every((t) => h.tags.includes(t)) : true))
-    .sort((a, b) => b.score - a.score || b.updated.localeCompare(a.updated));
+    // Deterministic total order: score desc, recency desc, then PATH asc - a
+    // full tie must never fall back to input order (stores enumerate differently).
+    .sort(
+      (a, b) =>
+        b.score - a.score || b.updated.localeCompare(a.updated) || a.path.localeCompare(b.path)
+    );
   const limit = Math.min(query.limit ?? DEFAULT_SEARCH_LIMIT, MAX_SEARCH_LIMIT);
   const offset = decodeCursor(query.cursor);
   const results = scored.slice(offset, offset + limit).map((h) => ({

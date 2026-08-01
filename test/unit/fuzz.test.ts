@@ -147,11 +147,16 @@ describe('fuzz: differential (memory vs bare-git)', () => {
           const v = await store.read(op.path);
           return v ? { body: v.body, tags: v.tags, fm: v.frontmatter } : null;
         }
-        case 'search':
-          return (await store.search({ query: op.q, limit: 10 })).results.map((r) => ({
+        case 'search': {
+          // Compare rank-relevant fields with a store-independent order: `updated`
+          // precision differs by store kind (git = seconds, memory = ms), so
+          // recency tie-order across stores is legitimately unspecified.
+          const rs = (await store.search({ query: op.q, limit: 10 })).results.map((r) => ({
             path: r.path,
             score: r.score,
           }));
+          return rs.sort((a, b) => b.score - a.score || a.path.localeCompare(b.path));
+        }
       }
     } catch (err) {
       return { threw: err instanceof Error ? err.message : String(err) };
