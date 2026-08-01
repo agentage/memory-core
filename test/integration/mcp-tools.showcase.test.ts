@@ -11,6 +11,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
   createBareGitStore,
   createIndexedGitStore,
+  createStorePool,
   parseMemoryId,
   type VaultStore,
   type WriteAuthor,
@@ -32,21 +33,17 @@ interface ToolResult {
 }
 
 const createMemoryTools = (reposRoot: string, indexed: boolean) => {
-  const stores = new Map<string, VaultStore>();
-
-  const storeFor = (memoryId: string): VaultStore => {
-    const { userId, vault } = parseMemoryId(memoryId); // allowlists both segments
-    const key = `${userId}/${vault}`;
-    let store = stores.get(key);
-    if (!store) {
+  // Keys are opaque to the pool; the HOST owns layout + tenant semantics here.
+  const pool = createStorePool({
+    create: (memoryId) => {
+      const { userId, vault } = parseMemoryId(memoryId); // allowlists both segments
       const repo = join(reposRoot, userId, `${vault}.git`);
-      store = indexed
+      return indexed
         ? createIndexedGitStore(repo, join(reposRoot, userId, `${vault}.index`))
         : createBareGitStore(repo);
-      stores.set(key, store);
-    }
-    return store;
-  };
+    },
+  });
+  const storeFor = (memoryId: string): VaultStore => pool.get(memoryId);
 
   const route = (ctx: ToolCtx, path: string): { store: VaultStore; rest: string } => {
     const m = /^@([^/]+)\/(.+)$/.exec(path);
