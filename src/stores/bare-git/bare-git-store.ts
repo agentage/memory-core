@@ -4,17 +4,14 @@
 // list 0 warm - version checks are fs reads, bulk doc reads are one batch.
 
 import { applyEdit } from '../../contract/edit.js';
-import { pageNotes } from '../../contract/notes.js';
 import { deriveTags, parseDoc, serializeDoc, titleFromPath } from '../../contract/memory-doc.js';
 import { assertSafePath, safePath } from '../../contract/paths.js';
 import { clampView, ensureSize } from '../../contract/read-budget.js';
 import { assertNoRestricted, frontmatterText } from '../../contract/restricted-data.js';
 import { rankAndPage } from '../../contract/search.js';
-import { buildTree, DEFAULT_LIST_DEPTH, normalizeFolder } from '../../contract/tree.js';
+import { DEFAULT_LIST_DEPTH, normalizeFolder, pageTree } from '../../contract/tree.js';
 import type {
   EditInput,
-  ListNotesQuery,
-  ListNotesResult,
   ListQuery,
   ListResult,
   MemoryView,
@@ -167,19 +164,6 @@ export const createBareGitStore = (repoDir: string, opts: BareGitStoreOptions = 
       return opts?.clamp === false ? view : clampView(view);
     },
 
-    async listNotes(q?: ListNotesQuery): Promise<ListNotesResult> {
-      if (!git.repoExists()) return { notes: [], total: 0 };
-      await detectDrift();
-      const s = await getSnap();
-      if (!s) return { notes: [], total: 0 };
-      return pageNotes(
-        s.paths,
-        q,
-        (page) => git.batchRead('HEAD', page),
-        (p) => s.mtimes.get(p) ?? null
-      );
-    },
-
     async delete(path: string): Promise<boolean> {
       if (!safePath(path) || !git.repoExists()) return false;
       await detectDrift();
@@ -215,7 +199,7 @@ export const createBareGitStore = (repoDir: string, opts: BareGitStoreOptions = 
           return query.tags!.every((t) => deriveTags(frontmatter, body).includes(t));
         });
       }
-      return buildTree(paths, folder, depth, s.mtimes);
+      return pageTree(paths, folder, depth, s.mtimes, query);
     },
 
     async search(query: SearchQuery): Promise<SearchResult> {

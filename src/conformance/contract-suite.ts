@@ -81,50 +81,6 @@ export const contractSuite = (t: ConformanceTarget): void => {
       });
     });
 
-    describe('listNotes (flat, cursor-paged)', () => {
-      beforeEach(async () => {
-        await store.write({ path: 'root.md', body: 'r' });
-        await store.write({ path: 'a/one.md', body: 'first note', frontmatter: { k: 1 } });
-        await store.write({ path: 'a/two.md', body: 'second' });
-        await store.write({ path: 'a/b/deep.md', body: 'buried' });
-      });
-
-      it('pages the whole vault, name-sorted, with a drainable cursor', async () => {
-        const p1 = await store.listNotes({ limit: 3 });
-        expect(p1.total).toBe(4);
-        expect(p1.notes.map((n) => n.path)).toEqual(['a/b/deep.md', 'a/one.md', 'a/two.md']);
-        expect(p1.nextCursor).toBeTruthy();
-        const p2 = await store.listNotes({ limit: 3, cursor: p1.nextCursor });
-        expect(p2.notes.map((n) => n.path)).toEqual(['root.md']);
-        expect(p2.nextCursor).toBeUndefined();
-      });
-
-      it('NoteMeta carries excerpt and the exact stored byte size', async () => {
-        const { notes } = await store.listNotes({ folder: 'a', limit: 1 });
-        const one = (await store.listNotes({ folder: 'a' })).notes.find(
-          (n) => n.path === 'a/one.md'
-        )!;
-        expect(notes).toHaveLength(1);
-        expect(one.title).toBe('one');
-        expect(one.excerpt).toBe('first note');
-        expect(one.sizeBytes).toBeGreaterThan('first note'.length); // frontmatter included
-      });
-
-      it('depth scoping: 0 = direct notes only, -1/default = full tree, N = N levels', async () => {
-        expect((await store.listNotes({ folder: 'a' })).total).toBe(3);
-        expect((await store.listNotes({ folder: 'a', depth: 0 })).notes.map((n) => n.path)).toEqual(
-          ['a/one.md', 'a/two.md']
-        );
-        expect((await store.listNotes({ depth: 0 })).notes.map((n) => n.path)).toEqual(['root.md']);
-        expect((await store.listNotes({ depth: 1 })).total).toBe(3); // root + a/* but not a/b/*
-      });
-
-      it('empty vault lists cleanly', async () => {
-        const fresh = await t.make();
-        expect(await fresh.listNotes()).toEqual({ notes: [], total: 0 });
-      });
-    });
-
     describe('edit', () => {
       beforeEach(async () => {
         await store.write({ path: 'n.md', body: 'alpha beta', frontmatter: { a: 1 } });
@@ -192,6 +148,48 @@ export const contractSuite = (t: ConformanceTarget): void => {
         expect(scoped.files).toBe(2);
         const tagged = await store.list({ tags: ['x'] });
         expect(tagged.files).toBe(1);
+      });
+    });
+
+    describe('list paging (backward capable)', () => {
+      beforeEach(async () => {
+        for (let i = 0; i < 7; i++) {
+          await store.write({ path: `bulk/n${String(i).padStart(2, '0')}.md`, body: `n${i}` });
+        }
+      });
+
+      it('a plain call has NO nextCursor key - the frozen tool behavior', async () => {
+        const res = await store.list({});
+        expect(res.files).toBe(7);
+        expect('nextCursor' in res).toBe(false);
+      });
+
+      it('opting into limit/cursor drains the vault as tree-shaped pages', async () => {
+        const p1 = await store.list({ limit: 3 });
+        expect(p1.files).toBe(7); // total, page-independent
+        expect(p1.nextCursor).toBeTruthy();
+        const seen: string[] = [];
+        let cursor = p1.nextCursor;
+        const collect = (r: { entries: unknown[] }): void => {
+          for (const e of r.entries as Array<{ type: string; path: string; entries?: unknown[] }>)
+            if (e.type === 'file') seen.push(e.path);
+            else if (e.entries) collect({ entries: e.entries });
+        };
+        collect(p1);
+        while (cursor) {
+          const p = await store.list({ limit: 3, cursor });
+          collect(p);
+          cursor = p.nextCursor;
+        }
+        expect(seen.sort()).toEqual([
+          'bulk/n00.md',
+          'bulk/n01.md',
+          'bulk/n02.md',
+          'bulk/n03.md',
+          'bulk/n04.md',
+          'bulk/n05.md',
+          'bulk/n06.md',
+        ]);
       });
     });
 

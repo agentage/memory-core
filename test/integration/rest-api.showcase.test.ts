@@ -65,16 +65,16 @@ const createV1 = (reposRoot: string) => {
     return { status: 200, body: { path: p, title, frontmatter, body, tags, updated, sizeBytes } };
   };
 
-  // GET /v1/vaults/{vault}/notes - the live flat wire: { notes, nextCursor }.
+  // GET /v1/vaults/{vault}/notes - SAME shape as memory__list (squashed): the
+  // ListResult tree, cursor-drainable when the caller opts into limit/cursor.
   const getNotes = async (
     userId: string,
     vault: string,
-    q: { folder?: string; limit?: number; cursor?: string } = {}
+    q: { folder?: string; depth?: number; limit?: number; cursor?: string } = {}
   ): Promise<Json> => {
     const v = vaultOf(userId, vault);
     if (!v || !(await v.store.version())) return err(404, 'not_found', 'no such vault');
-    const { notes, nextCursor } = await v.store.listNotes(q);
-    return { status: 200, body: { notes, nextCursor: nextCursor ?? null } };
+    return { status: 200, body: await v.store.list(q) };
   };
 
   // GET /v1/vaults/{vault}/search?q=
@@ -161,21 +161,18 @@ describe('rest /v1 showcase', () => {
     expect((res.body as { files: number }).files).toBe(2);
   });
 
-  it('flat notes wire matches the live /v1 pin: { notes, nextCursor }, NoteMeta keys', async () => {
-    const res = await api.getNotes('carol03', 'main', { limit: 1 });
-    const body = res.body as { notes: Record<string, unknown>[]; nextCursor: string | null };
-    expect(Object.keys(body).sort()).toEqual(['nextCursor', 'notes']);
-    expect(Object.keys(body.notes[0]!).sort()).toEqual([
-      'excerpt',
-      'path',
-      'sizeBytes',
-      'tags',
-      'title',
-      'updated',
-    ]);
-    expect(body.nextCursor).toBeTruthy();
-    const page2 = await api.getNotes('carol03', 'main', { limit: 1, cursor: body.nextCursor! });
-    expect((page2.body as { nextCursor: null }).nextCursor).toBeNull();
+  it('notes wire IS the memory__list shape - squashed, cursor when opted in', async () => {
+    const plain = await api.getNotes('carol03', 'main');
+    expect(plain.body).toEqual(await api._seed('carol03', 'main')!.store.list({})); // same object as the tool
+    expect('nextCursor' in (plain.body as object)).toBe(false); // backward capable
+    const p1 = await api.getNotes('carol03', 'main', { limit: 1 });
+    expect((p1.body as { files: number }).files).toBe(2);
+    expect((p1.body as { nextCursor?: string }).nextCursor).toBeTruthy();
+    const p2 = await api.getNotes('carol03', 'main', {
+      limit: 1,
+      cursor: (p1.body as { nextCursor: string }).nextCursor,
+    });
+    expect((p2.body as { nextCursor?: string }).nextCursor).toBeUndefined();
   });
 
   it('note read carries the full body and exact stored size', async () => {

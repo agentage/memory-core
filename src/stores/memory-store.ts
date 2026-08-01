@@ -4,17 +4,14 @@
 // store follows: validate -> guard -> persist -> emit.
 
 import { applyEdit } from '../contract/edit.js';
-import { pageNotes } from '../contract/notes.js';
 import { deriveTags, serializeDoc, titleFromPath } from '../contract/memory-doc.js';
 import { assertSafePath, safePath } from '../contract/paths.js';
 import { clampView, ensureSize } from '../contract/read-budget.js';
 import { assertNoRestricted, frontmatterText } from '../contract/restricted-data.js';
 import { countOccurrences, rankAndPage } from '../contract/search.js';
-import { buildTree, DEFAULT_LIST_DEPTH, normalizeFolder } from '../contract/tree.js';
+import { DEFAULT_LIST_DEPTH, normalizeFolder, pageTree } from '../contract/tree.js';
 import type {
   EditInput,
-  ListNotesQuery,
-  ListNotesResult,
   ListQuery,
   ListResult,
   MemoryView,
@@ -123,21 +120,6 @@ export const createMemoryStore = (
       return opts?.clamp === false ? view : clampView(view);
     },
 
-    async listNotes(q?: ListNotesQuery): Promise<ListNotesResult> {
-      return pageNotes(
-        docs.keys(),
-        q,
-        async (page) =>
-          new Map(
-            page.map((p) => {
-              const d = docs.get(p)!;
-              return [p, serializeDoc(d.frontmatter, d.body)] as [string, string];
-            })
-          ),
-        (p) => docs.get(p)?.updated ?? null
-      );
-    },
-
     async delete(path: string): Promise<boolean> {
       if (!safePath(path) || !docs.has(path)) return false;
       docs.delete(path);
@@ -157,7 +139,7 @@ export const createMemoryStore = (
         });
       }
       const mtimes = new Map([...docs].map(([p, d]) => [p, d.updated]));
-      return buildTree(paths, folder, depth, mtimes);
+      return pageTree(paths, folder, depth, mtimes, query);
     },
 
     async search(query: SearchQuery): Promise<SearchResult> {

@@ -9,17 +9,14 @@ import { existsSync } from 'node:fs';
 import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { applyEdit } from '../../contract/edit.js';
-import { pageNotes } from '../../contract/notes.js';
 import { deriveTags, parseDoc, serializeDoc, titleFromPath } from '../../contract/memory-doc.js';
 import { assertSafePath, safePath } from '../../contract/paths.js';
 import { clampView, ensureSize } from '../../contract/read-budget.js';
 import { assertNoRestricted, frontmatterText } from '../../contract/restricted-data.js';
 import { countOccurrences, rankAndPage } from '../../contract/search.js';
-import { buildTree, DEFAULT_LIST_DEPTH, normalizeFolder } from '../../contract/tree.js';
+import { DEFAULT_LIST_DEPTH, normalizeFolder, pageTree } from '../../contract/tree.js';
 import type {
   EditInput,
-  ListNotesQuery,
-  ListNotesResult,
   ListQuery,
   ListResult,
   MemoryView,
@@ -239,27 +236,6 @@ export const createWorkingCopyGitStore = (
       return opts?.clamp === false ? view : clampView(view);
     },
 
-    async listNotes(q?: ListNotesQuery): Promise<ListNotesResult> {
-      await detectDrift();
-      const state = lastState ?? new Map<string, { mtimeMs: number }>();
-      return pageNotes(
-        state.keys(),
-        q,
-        async (page) => {
-          const out = new Map<string, string>();
-          for (const p of page) {
-            const raw = await readRaw(p);
-            if (raw !== undefined) out.set(p, raw);
-          }
-          return out;
-        },
-        (p) => {
-          const s = state.get(p);
-          return s ? new Date(s.mtimeMs).toISOString() : null;
-        }
-      );
-    },
-
     async delete(path: string): Promise<boolean> {
       if (!safePath(path) || !existsSync(join(dir, path))) return false;
       await detectDrift();
@@ -293,7 +269,7 @@ export const createWorkingCopyGitStore = (
       const mtimes = new Map(
         [...state].map(([p, s]) => [p, new Date(s.mtimeMs).toISOString()] as [string, string])
       );
-      return buildTree(paths, folder, depth, mtimes);
+      return pageTree(paths, folder, depth, mtimes, query);
     },
 
     async search(query: SearchQuery): Promise<SearchResult> {

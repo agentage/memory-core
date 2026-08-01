@@ -2,6 +2,7 @@
 // total-budget truncation (tree --filelimit semantics). Stores supply the flat
 // path list + mtimes; the shape logic never diverges between implementations.
 
+import { decodeCursor, encodeCursor } from './cursor.js';
 import { titleFromPath } from './memory-doc.js';
 import type { ListResult, TreeFile, TreeFolder } from './types.js';
 
@@ -11,6 +12,7 @@ export interface ListLimits {
 }
 
 export const DEFAULT_LIST_LIMITS: ListLimits = { folderEntries: 100, totalEntries: 500 };
+export const MAX_LIST_LIMIT = 500;
 export const DEFAULT_LIST_DEPTH = 2;
 
 // "work/" and "work" both mean the folder work; '' means the vault root.
@@ -104,4 +106,32 @@ export const buildTree = (
   }
   for (const f of topFiles) result.entries.push(fileEntry(f));
   return result;
+};
+
+// THE list implementation every store calls: a tree-shaped, cursor-drainable
+// window over the name-sorted file set. `files` = total in scope (page-
+// independent, matching the tool schema's wording); `nextCursor` appears while
+// more pages remain, so no folder size is ever unreachable.
+export const pageTree = (
+  paths: string[],
+  folder: string,
+  depth: number,
+  mtimes: Map<string, string>,
+  page?: { limit?: number; cursor?: string },
+  limits: ListLimits = DEFAULT_LIST_LIMITS
+): ListResult => {
+  // BACKWARD CAPABLE: a plain call (no limit, no cursor) is byte-identical to
+  // the frozen memory__list behavior - budget truncation, no nextCursor key.
+  if (page?.limit === undefined && page?.cursor === undefined) {
+    return buildTree(paths, folder, depth, mtimes, limits);
+  }
+  const sorted = [...paths].sort((a, b) => a.localeCompare(b));
+  const total = sorted.length;
+  const limit = Math.min(Math.max(page.limit ?? MAX_LIST_LIMIT, 1), MAX_LIST_LIMIT);
+  const offset = decodeCursor(page.cursor);
+  const slice = sorted.slice(offset, offset + limit);
+  const result = buildTree(slice, folder, depth, mtimes, limits);
+  result.files = total;
+  const next = offset + limit;
+  return next < total ? { ...result, nextCursor: encodeCursor(next) } : result;
 };
