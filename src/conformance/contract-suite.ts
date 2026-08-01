@@ -69,6 +69,59 @@ export const contractSuite = (t: ConformanceTarget): void => {
         const view = await store.read('big.md');
         expect(view!.body.length).toBeLessThan(70 * 1024);
         expect(view!.body).toContain('[Truncated for display');
+        expect(view!.sizeBytes).toBe(70 * 1024); // sizeBytes reports the STORED size
+      });
+
+      it('read({clamp:false}) returns the full body for API/export flows', async () => {
+        await store.write({ path: 'full.md', body: 'y'.repeat(70 * 1024) });
+        const view = await store.read('full.md', { clamp: false });
+        expect(view!.body).toBe('y'.repeat(70 * 1024));
+        expect(view!.body).not.toContain('[Truncated for display');
+        expect(view!.sizeBytes).toBe(70 * 1024);
+      });
+    });
+
+    describe('listNotes (flat, cursor-paged)', () => {
+      beforeEach(async () => {
+        await store.write({ path: 'root.md', body: 'r' });
+        await store.write({ path: 'a/one.md', body: 'first note', frontmatter: { k: 1 } });
+        await store.write({ path: 'a/two.md', body: 'second' });
+        await store.write({ path: 'a/b/deep.md', body: 'buried' });
+      });
+
+      it('pages the whole vault, name-sorted, with a drainable cursor', async () => {
+        const p1 = await store.listNotes({ limit: 3 });
+        expect(p1.total).toBe(4);
+        expect(p1.notes.map((n) => n.path)).toEqual(['a/b/deep.md', 'a/one.md', 'a/two.md']);
+        expect(p1.nextCursor).toBeTruthy();
+        const p2 = await store.listNotes({ limit: 3, cursor: p1.nextCursor });
+        expect(p2.notes.map((n) => n.path)).toEqual(['root.md']);
+        expect(p2.nextCursor).toBeUndefined();
+      });
+
+      it('NoteMeta carries excerpt and the exact stored byte size', async () => {
+        const { notes } = await store.listNotes({ folder: 'a', limit: 1 });
+        const one = (await store.listNotes({ folder: 'a' })).notes.find(
+          (n) => n.path === 'a/one.md'
+        )!;
+        expect(notes).toHaveLength(1);
+        expect(one.title).toBe('one');
+        expect(one.excerpt).toBe('first note');
+        expect(one.sizeBytes).toBeGreaterThan('first note'.length); // frontmatter included
+      });
+
+      it('depth scoping: 0 = direct notes only, -1/default = full tree, N = N levels', async () => {
+        expect((await store.listNotes({ folder: 'a' })).total).toBe(3);
+        expect((await store.listNotes({ folder: 'a', depth: 0 })).notes.map((n) => n.path)).toEqual(
+          ['a/one.md', 'a/two.md']
+        );
+        expect((await store.listNotes({ depth: 0 })).notes.map((n) => n.path)).toEqual(['root.md']);
+        expect((await store.listNotes({ depth: 1 })).total).toBe(3); // root + a/* but not a/b/*
+      });
+
+      it('empty vault lists cleanly', async () => {
+        const fresh = await t.make();
+        expect(await fresh.listNotes()).toEqual({ notes: [], total: 0 });
       });
     });
 
