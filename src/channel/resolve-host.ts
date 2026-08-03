@@ -26,8 +26,7 @@ export interface SyncResolution {
 
 /** The sync channel a resolved memory uses. Exactly one per memory. */
 export type VaultChannel =
-  | { channel: 'git' }
-  | { channel: 'couch'; endpoint: string; db: string; tokenUrl: string };
+  { channel: 'git' } | { channel: 'couch'; endpoint: string; db: string; tokenUrl: string };
 
 export type FetchJson = (url: string, token: string) => Promise<{ status: number; json: unknown }>;
 export type Clock = () => number;
