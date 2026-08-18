@@ -1,13 +1,14 @@
 version: 2
 updates:
-  - package-ecosystem: npm
-    directory: /
+  - package-ecosystem: 'npm'
+    directory: '/'
     schedule:
-      interval: weekly
-      day: friday
+      interval: 'weekly'
+      day: 'friday'
       time: '16:00'
-      timezone: Etc/UTC
-    assignees: [vreshch]
+      timezone: 'Etc/UTC'
+    assignees:
+      - 'vreshch'
     open-pull-requests-limit: 10
     ignore:
       # typescript-eslint peer-caps typescript <6.1.0 - drop when it supports 7.x
@@ -15,16 +16,20 @@ updates:
         update-types: ['version-update:semver-major']
     groups:
       all-dependencies:
-        patterns: ['*']
-  - package-ecosystem: github-actions
-    directory: /
+        patterns:
+          - '*'
+
+  - package-ecosystem: 'github-actions'
+    directory: '/'
     schedule:
-      interval: weekly
-      day: friday
+      interval: 'weekly'
+      day: 'friday'
       time: '16:00'
-      timezone: Etc/UTC
-    assignees: [vreshch]
+      timezone: 'Etc/UTC'
+    assignees:
+      - 'vreshch'
     open-pull-requests-limit: 5
     groups:
       all-actions:
-        patterns: ['*']
+        patterns:
+          - '*'
