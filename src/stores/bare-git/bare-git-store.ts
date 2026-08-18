@@ -191,7 +191,8 @@ export const createBareGitStore = (repoDir: string, opts: BareGitStoreOptions = 
       const depth = Math.min(Math.max(query.depth ?? DEFAULT_LIST_DEPTH, 1), 2);
       let paths = [...s.paths].filter((p) => (folder ? p.startsWith(`${folder}/`) : true));
       if (query.tags?.length) {
-        const docs = await git.batchRead('HEAD', paths);
+        // Same ref as the snapshot being filtered - HEAD can move mid-list.
+        const docs = await git.batchRead(s.version, paths);
         paths = paths.filter((p) => {
           const raw = docs.get(p);
           if (raw === undefined) return false;

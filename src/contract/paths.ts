@@ -14,7 +14,7 @@ export const parseMemoryId = (memoryId: string): { userId: string; vault: string
   const userId = parts[0] ?? '';
   const vault = parts.length === 1 ? 'default' : (parts[1] ?? '');
   if (parts.length > 2 || !SAFE_SEGMENT.test(userId) || !SAFE_SEGMENT.test(vault)) {
-    throw new Error(`invalid memoryId: ${JSON.stringify(memoryId)}`);
+    throw new StoreError('invalid_path', `invalid memoryId: ${JSON.stringify(memoryId)}`);
   }
   return { userId, vault };
 };

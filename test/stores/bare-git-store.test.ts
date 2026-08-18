@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -108,6 +108,37 @@ describe('bare-git-store: durability + concurrency', () => {
     const log = await runGit(repo, ['log', '--format=%s']);
     expect(log).toContain('delete: gone.md');
     expect(log).toContain('write: gone.md');
+  });
+});
+
+describe('bare-git-store: snapshot consistency', () => {
+  it('tag-filtered list reads the snapshot ref, not a HEAD that moved mid-call', async () => {
+    const repo = await makeRepoDir();
+    const seed = createBareGitStore(repo);
+    await seed.write({ path: 'b.md', body: 'beta', frontmatter: { tags: ['keep'] } });
+    const v1 = (await seed.write({ path: 'a.md', body: 'alpha', frontmatter: { tags: ['keep'] } }))
+      .rev;
+    const v2 = (await seed.write({ path: 'a.md', body: 'alpha', frontmatter: { tags: ['gone'] } }))
+      .rev;
+    await runGit(repo, ['update-ref', 'refs/heads/main', v1]); // the store below boots at v1
+
+    // Fire the race once: the ref jumps v1 -> v2 after the snapshot, before the doc read.
+    let armed = false;
+    const s = createBareGitStore(repo, {
+      onSpawn: (args) => {
+        if (!armed || args[0] !== 'cat-file') return;
+        armed = false;
+        execFileSync('git', ['update-ref', 'refs/heads/main', v2], {
+          env: { ...process.env, GIT_DIR: repo },
+        });
+      },
+    });
+    await s.list({}); // warm the snapshot at v1
+    armed = true;
+
+    const res = await s.list({ tags: ['keep'] });
+    expect(res.entries.map((e) => e.path).sort()).toEqual(['a.md', 'b.md']);
+    expect(await runGit(repo, ['rev-parse', 'refs/heads/main'])).toContain(v2); // race did fire
   });
 });
 

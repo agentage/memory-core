@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { applyEdit } from '../../src/contract/edit.js';
+import { StoreError, storeErrorCode } from '../../src/contract/errors.js';
 import { parseDoc, serializeDoc } from '../../src/contract/memory-doc.js';
 import { parseMemoryId, safePath } from '../../src/contract/paths.js';
 
@@ -28,6 +29,20 @@ describe('parseMemoryId', () => {
     expect(() => parseMemoryId('a/b/c')).toThrow();
     expect(() => parseMemoryId('../x')).toThrow();
     expect(() => parseMemoryId('a b/c')).toThrow();
+  });
+
+  it('rejects with a coded StoreError so consumers map it like any other path refusal', () => {
+    for (const bad of ['a/b/c', '../x', 'a b/c']) {
+      let thrown: unknown;
+      try {
+        parseMemoryId(bad);
+      } catch (e) {
+        thrown = e;
+      }
+      expect(thrown).toBeInstanceOf(StoreError);
+      expect(storeErrorCode(thrown)).toBe('invalid_path');
+      expect((thrown as StoreError).message).toBe(`invalid memoryId: ${JSON.stringify(bad)}`);
+    }
   });
 });
 
