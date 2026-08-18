@@ -8,7 +8,7 @@ import { deriveTags, parseDoc, serializeDoc, titleFromPath } from '../../contrac
 import { assertSafePath, safePath } from '../../contract/paths.js';
 import { clampView, ensureSize } from '../../contract/read-budget.js';
 import { assertNoRestricted, frontmatterText } from '../../contract/restricted-data.js';
-import { rankAndPage } from '../../contract/search.js';
+import { rankAndPageDeferred } from '../../contract/search.js';
 import { DEFAULT_LIST_DEPTH, normalizeFolder, pageTree } from '../../contract/tree.js';
 import type {
   EditInput,
@@ -221,18 +221,14 @@ export const createBareGitStore = (repoDir: string, opts: BareGitStoreOptions = 
         const path = rest.slice(0, rest.indexOf(':'));
         if (path) counts.set(path, (counts.get(path) ?? 0) + 1);
       }
-      const docs = await git.batchRead(s.version, [...counts.keys()]);
-      const hits = [...counts.entries()].map(([path, score]) => {
-        const { frontmatter, body } = parseDoc(docs.get(path) ?? '');
-        return {
-          path,
-          score,
-          tags: deriveTags(frontmatter, body),
-          body,
-          updated: s.mtimes.get(path) ?? '',
-        };
-      });
-      return rankAndPage(hits, query);
+      // grep already yields every ranking input (path, occurrences, mtime), so the
+      // page is decided before any blob is read - one page of docs, not one per match.
+      const hits = [...counts.entries()].map(([path, score]) => ({
+        path,
+        score,
+        updated: s.mtimes.get(path) ?? '',
+      }));
+      return rankAndPageDeferred(hits, query, (paths) => git.batchRead(s.version, paths));
     },
 
     async version(): Promise<string | null> {
