@@ -17,6 +17,7 @@ import type {
   MemoryView,
   SearchQuery,
   SearchResult,
+  VaultDescription,
   WriteAuthor,
   WriteInput,
   WriteResult,
@@ -46,10 +47,12 @@ export const createMemoryStore = (
   const docs = new Map<string, Doc>();
   const observers = new Set<StoreObserver>();
   let counter = 0;
+  let lastChange: string | null = null;
 
   for (const f of seed) {
     assertSafePath(f.path);
-    docs.set(f.path, { frontmatter: {}, body: f.body, updated: now() });
+    lastChange = now();
+    docs.set(f.path, { frontmatter: {}, body: f.body, updated: lastChange });
   }
   if (seed.length) counter = 1;
 
@@ -57,7 +60,8 @@ export const createMemoryStore = (
 
   const emit = (e: Omit<StoreEvent, 'version' | 'at'>): void => {
     counter++;
-    const event: StoreEvent = { ...e, version: String(counter), at: now() };
+    lastChange = now();
+    const event: StoreEvent = { ...e, version: String(counter), at: lastChange };
     for (const obs of observers) {
       try {
         obs(event);
@@ -153,6 +157,23 @@ export const createMemoryStore = (
         updated: doc.updated,
       }));
       return rankAndPage(hits, query);
+    },
+
+    async describe(): Promise<VaultDescription> {
+      const folders = new Set<string>();
+      let sizeBytes = 0;
+      for (const [path, doc] of docs) {
+        sizeBytes += Buffer.byteLength(serializeDoc(doc.frontmatter, doc.body), 'utf8');
+        const parts = path.split('/');
+        for (let i = 1; i < parts.length; i++) folders.add(parts.slice(0, i).join('/'));
+      }
+      return {
+        files: docs.size,
+        folders: folders.size,
+        sizeBytes,
+        updated: lastChange,
+        version: versionOf(),
+      };
     },
 
     async version(): Promise<string | null> {

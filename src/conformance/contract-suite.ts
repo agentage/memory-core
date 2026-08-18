@@ -243,6 +243,59 @@ export const contractSuite = (t: ConformanceTarget): void => {
       }, 120_000);
     });
 
+    describe('describe', () => {
+      it('an empty vault describes as all-zero, no version, no updated', async () => {
+        expect(await store.describe()).toEqual({
+          files: 0,
+          folders: 0,
+          sizeBytes: 0,
+          updated: null,
+          version: null,
+        });
+      });
+
+      it('never provisions or mutates - version stays null, repeats identically', async () => {
+        const first = await store.describe();
+        expect(await store.version()).toBeNull();
+        expect(await store.describe()).toEqual(first);
+        expect(events).toHaveLength(0);
+      });
+
+      it('counts files and folders consistently with list()', async () => {
+        await store.write({ path: 'root.md', body: 'r' });
+        await store.write({ path: 'work/a.md', body: 'a' });
+        await store.write({ path: 'work/deep/b.md', body: 'b' });
+        const d = await store.describe();
+        expect(d.files).toBe((await store.list({})).files);
+        expect(d.files).toBe(3);
+        expect(d.folders).toBe(2); // work, work/deep
+      });
+
+      it('sizeBytes is the exact stored total, updated and version are set', async () => {
+        await store.write({ path: 'a.md', body: 'héllo' });
+        await store.write({ path: 'sub/b.md', body: 'x'.repeat(1000), frontmatter: { t: 1 } });
+        const d = await store.describe();
+        const sizes = await Promise.all(
+          ['a.md', 'sub/b.md'].map(async (p) => (await store.read(p, { clamp: false }))!.sizeBytes)
+        );
+        expect(d.sizeBytes).toBe(sizes.reduce((a, b) => a! + b!, 0));
+        expect(d.updated).not.toBeNull();
+        expect(d.version).toBe(await store.version());
+      });
+
+      it('counts drop after a delete', async () => {
+        await store.write({ path: 'keep.md', body: 'k' });
+        await store.write({ path: 'gone/x.md', body: 'g' });
+        const before = await store.describe();
+        expect(await store.delete('gone/x.md')).toBe(true);
+        const after = await store.describe();
+        expect(after.files).toBe(before.files - 1);
+        expect(after.folders).toBe(before.folders - 1);
+        expect(after.sizeBytes).toBeLessThan(before.sizeBytes);
+        expect(after.version).toBe(await store.version());
+      });
+    });
+
     describe('version + refresh + events', () => {
       it('version is null on an empty vault and stable across reads', async () => {
         expect(await store.version()).toBeNull();

@@ -17,6 +17,7 @@ import type {
   MemoryView,
   SearchQuery,
   SearchResult,
+  VaultDescription,
   WriteAuthor,
   WriteInput,
   WriteResult,
@@ -25,6 +26,7 @@ import type { StoreEvent, StoreObserver, VaultStore } from '../../contract/vault
 import { commitChange, gitAuthorOf } from './commit.js';
 import { createGitRunner } from './git-run.js';
 import { buildSnapshot, driftPaths, type Snapshot } from './snapshot.js';
+import { computeVaultStats } from './stats-view.js';
 
 const SEARCH_TIMEOUT_MS = 5_000;
 
@@ -230,6 +232,18 @@ export const createBareGitStore = (repoDir: string, opts: BareGitStoreOptions = 
         updated: s.mtimes.get(path) ?? '',
       }));
       return rankAndPageDeferred(hits, query, (paths) => git.batchRead(s.version, paths));
+    },
+
+    // Read-only: never creates the repo, so an unprovisioned vault describes as empty.
+    async describe(): Promise<VaultDescription> {
+      const none = { files: 0, folders: 0, sizeBytes: 0, updated: null, version: null };
+      if (!git.repoExists()) return none;
+      await detectDrift();
+      const version = await git.readVersion();
+      if (!version) return none;
+      const { files, folders, sizeBytes } = await computeVaultStats(repoDir, version);
+      const at = await git.tryRun(['log', '-1', '--format=%cI', version]);
+      return { files, folders, sizeBytes, updated: at?.trim() || null, version };
     },
 
     async version(): Promise<string | null> {
