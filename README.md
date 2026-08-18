@@ -44,33 +44,24 @@ const cache = createDerivedCache(store, '/data/repos/alice01/main.cache');
 const stats = await cache.get(createStatsView('/data/repos/alice01/main.git')); // { files, folders, sizeBytes }
 ```
 
-### Swap the store, swap the search
+### Swap the store, keep the contract
 
 ```ts
-import {
-  createIndexedGitStore,
-  createWorkingCopyGitStore,
-  createMemoryStore,
-  createRemoteStore,
-} from '@agentage/store-core';
+import { createMemoryStore } from '@agentage/store-core';
 
-createIndexedGitStore(repoDir, indexDir); // same contract, SQLite-FTS5 search (7x faster @1k), grep fallback
-createWorkingCopyGitStore(vaultDir); // local world: uncommitted editor saves are readable + searchable
-createMemoryStore(); // dev/test fixture
-createRemoteStore(baseUrl, token); // the contract over HTTP (server half: createStoreHandler)
+createMemoryStore(); // dev/test fixture - the reference implementation
 ```
 
-| Store                       | World                  | Search                                     |
-| --------------------------- | ---------------------- | ------------------------------------------ |
-| `createMemoryStore`         | tests/dev              | in-process scan (reference impl)           |
-| `createBareGitStore`        | server (multi-tenant)  | `git grep` HEAD                            |
-| `createWorkingCopyGitStore` | local (human co-owned) | worktree scan, uncommitted included        |
-| `createIndexedGitStore`     | server                 | SQLite FTS5 (`node:sqlite`), grep fallback |
-| `createRemoteStore`         | any client             | server-side via `createStoreHandler`       |
+| Store                | World                 | Search                           |
+| -------------------- | --------------------- | -------------------------------- |
+| `createMemoryStore`  | tests/dev             | in-process scan (reference impl) |
+| `createBareGitStore` | server (multi-tenant) | `git grep` HEAD                  |
+
+Both pass the same conformance kit, so a consumer written against one runs unchanged on the other. Stores for other worlds (local working copy, FTS-indexed, HTTP client/server) are out of scope for now - they lived here through `v0.1.0` and are recoverable from git history.
 
 ## Consumer templates (start here when integrating)
 
-- **MCP tool layer** (memory-mcp shape - token ctx, `@vault/` routing, isError results, store-swap proof): `test/integration/mcp-tools.showcase.test.ts`
+- **MCP tool layer** (memory-mcp shape - token ctx, `@vault/` routing, isError results): `test/integration/mcp-tools.showcase.test.ts`
 - **/v1 REST handlers** (resource JSON, `{error:{code,message}}` envelope, derived stats; `/notes` = the memory__list shape, cursor-drainable on opt-in): `test/integration/rest-api.showcase.test.ts`
 - **Full lifecycle on one vault** (push -> events -> derived state -> restart): `test/integration/e2e-lifecycle.test.ts`
 
