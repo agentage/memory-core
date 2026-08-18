@@ -11,6 +11,7 @@ export type {
   TreeEntry,
   TreeFile,
   TreeFolder,
+  VaultDescription,
   WriteAuthor,
   WriteInput,
   WriteResult,

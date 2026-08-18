@@ -27,6 +27,7 @@ const hits = await store.search({ query: 'zebra', limit: 10 }); // [{ path, titl
 const view = await store.read('inbox/idea.md'); // { body, frontmatter, tags, title, updated }
 await store.edit({ path: 'inbox/idea.md', mode: 'str_replace', old_str: 'quiet', new_str: 'loud' });
 await store.delete('inbox/idea.md'); // recoverable - git history keeps it
+await store.describe(); // { files, folders, sizeBytes, updated, version } - the vault card
 ```
 
 Every write is a git commit with client attribution; guards are always on (path safety incl. `.git`/`.agentage` reservation, secrets/PII refusal, 8MB doc cap, 64KB read clamp).

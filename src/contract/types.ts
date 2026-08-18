@@ -63,6 +63,16 @@ export interface MemoryView {
   sizeBytes?: number;
 }
 
+export interface VaultDescription {
+  files: number;
+  folders: number;
+  sizeBytes: number;
+  // Latest content change (commit/mtime semantics per store); null = empty vault.
+  updated: string | null;
+  // Same opaque token version() returns; null = empty vault.
+  version: string | null;
+}
+
 export interface TreeFile {
   type: 'file';
   path: string;

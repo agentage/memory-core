@@ -5,6 +5,7 @@ import type {
   MemoryView,
   SearchQuery,
   SearchResult,
+  VaultDescription,
   WriteAuthor,
   WriteInput,
   WriteResult,
@@ -53,6 +54,8 @@ export interface VaultReader {
   // tree with truncation - never paginated (bounded-results contract, AC6).
   list(q: ListQuery): Promise<ListResult>;
   search(q: SearchQuery): Promise<SearchResult>;
+  // Cheap storage facts for a vault card - product shapes (names, histograms) live in the host.
+  describe(): Promise<VaultDescription>;
 }
 
 export interface VaultWriter {
