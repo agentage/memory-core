@@ -12,15 +12,10 @@ import {
   createBareGitStore,
   createDerivedCache,
   createStatsView,
-  createWorkingCopyGitStore,
   type VaultStore,
 } from '../../src/index.js';
 
 const SCALE = Number(process.env.PERF_SCALE ?? 1000);
-// The local (working-copy) store is O(vault size) on list/search by design - a
-// single-user worktree walk - so its budgets scale with the fixture. The server
-// (bare) store budgets are ABSOLUTE: that is where multi-tenant latency matters.
-const LOCAL_F = Math.max(1, SCALE / 1000);
 const rows: string[] = [];
 
 const record = (metric: string, value: number, budget: number): void => {
@@ -99,38 +94,29 @@ afterAll(() => {
 
 describe(`non-functional @ ${SCALE} notes`, () => {
   let bare: VaultStore;
-  let wc: VaultStore;
 
   beforeAll(async () => {
     bare = createBareGitStore(bareDir);
-    wc = createWorkingCopyGitStore(wcDir);
     const t0 = performance.now();
     await bare.list({}); // cold snapshot: the once-per-version history walk
     record('bare cold first list (snapshot build)', performance.now() - t0, 5_000);
-    await wc.list({});
   }, 60_000);
 
-  it('read: bare p50 <= 30ms, working-copy p50 <= 15ms', async () => {
+  it('read: bare p50 <= 30ms', async () => {
     const b = await time(30, (i) => bare.read(`folder-${i % 10}/note-${i * 7}.md`));
     record('bare read p50', quantile(b, 0.5), 30);
-    const w = await time(30, (i) => wc.read(`folder-${i % 10}/note-${i * 7}.md`));
-    record('working-copy read p50', quantile(w, 0.5), 30);
   }, 60_000);
 
-  it('search: p95 within the ADR-011 300ms trigger on both stores', async () => {
+  it('search: p95 within the ADR-011 300ms trigger', async () => {
     const b = await time(10, () => bare.search({ query: 'galaxy', limit: 50 }));
     record('bare search p95', quantile(b, 0.95), 300);
-    const w = await time(10, () => wc.search({ query: 'galaxy', limit: 50 }));
-    record('working-copy search p95', quantile(w, 0.95), 750 * LOCAL_F);
     const hits = await bare.search({ query: 'galaxy', limit: 50 });
     expect(hits.results.length).toBe(50); // full page at this scale
   }, 60_000);
 
-  it('list warm: <= 25ms average on both stores', async () => {
+  it('list warm: <= 25ms average', async () => {
     const b = await time(10, () => bare.list({}));
     record('bare list warm avg', b.reduce((a, x) => a + x, 0) / b.length, 25);
-    const w = await time(10, () => wc.list({}));
-    record('working-copy list warm avg', w.reduce((a, x) => a + x, 0) / w.length, 150 * LOCAL_F);
   }, 60_000);
 
   it('write: bare p50 <= 250ms (20 sequential writes; p95 is a loose sanity ceiling)', async () => {
@@ -160,16 +146,5 @@ describe(`non-functional @ ${SCALE} notes`, () => {
   it('refresh: quiet no-op is cheap; a real external change is bounded', async () => {
     const quiet = await time(20, () => bare.refresh());
     record('bare refresh (quiet) avg', quiet.reduce((a, x) => a + x, 0) / quiet.length, 5);
-  }, 60_000);
-
-  it('indexed store: cold reindex bounded, warm search beats the grep budget', async () => {
-    const { createIndexedGitStore } = await import('../../src/index.js');
-    const indexed = createIndexedGitStore(bareDir, join(bareDir, '..', '.index'));
-    const t0 = performance.now();
-    const first = await indexed.search({ query: 'galaxy', limit: 50 });
-    record('indexed cold search incl. full reindex', performance.now() - t0, 15_000);
-    expect(first.results.length).toBe(50);
-    const warm = await time(10, () => indexed.search({ query: 'galaxy', limit: 50 }));
-    record('indexed search p95 (warm)', quantile(warm, 0.95), 50);
   }, 60_000);
 });

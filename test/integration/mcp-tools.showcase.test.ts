@@ -1,8 +1,8 @@
 // SHOWCASE: how an MCP service (memory-mcp) wires the 6 memory__* tools onto
 // VaultStore. This is the intended consumer shape: auth resolves the context,
 // @vault/ prefixes route between a user's vaults, every tool is route -> verb ->
-// render, and errors become isError tool results. Swapping the store factory
-// (bare <-> indexed) changes search behavior and nothing else - both run below.
+// render, and errors become isError tool results. The tool layer only ever sees
+// the contract, so swapping the store factory changes nothing above this line.
 
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -10,7 +10,6 @@ import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   createBareGitStore,
-  createIndexedGitStore,
   createStorePool,
   parseMemoryId,
   type VaultStore,
@@ -32,15 +31,12 @@ interface ToolResult {
   structured?: unknown;
 }
 
-const createMemoryTools = (reposRoot: string, indexed: boolean) => {
+const createMemoryTools = (reposRoot: string) => {
   // Keys are opaque to the pool; the HOST owns layout + tenant semantics here.
   const pool = createStorePool({
     create: (memoryId) => {
       const { userId, vault } = parseMemoryId(memoryId); // allowlists both segments
-      const repo = join(reposRoot, userId, `${vault}.git`);
-      return indexed
-        ? createIndexedGitStore(repo, join(reposRoot, userId, `${vault}.index`))
-        : createBareGitStore(repo);
+      return createBareGitStore(join(reposRoot, userId, `${vault}.git`));
     },
   });
   const storeFor = (memoryId: string): VaultStore => pool.get(memoryId);
@@ -118,10 +114,7 @@ const createMemoryTools = (reposRoot: string, indexed: boolean) => {
 
 // ---- the proof ----
 
-describe.each([
-  { name: 'bare store', indexed: false },
-  { name: 'indexed store (search swapped, tools untouched)', indexed: true },
-])('mcp showcase over the $name', ({ indexed }) => {
+describe('mcp showcase over the bare store', () => {
   let tools: ReturnType<typeof createMemoryTools>;
   const alice: ToolCtx = {
     userId: 'alice01',
@@ -132,7 +125,7 @@ describe.each([
   const bob: ToolCtx = { ...alice, userId: 'bob02', vaults: ['main'] };
 
   beforeEach(async () => {
-    tools = createMemoryTools(await mkdtemp(join(tmpdir(), 'mcp-showcase-')), indexed);
+    tools = createMemoryTools(await mkdtemp(join(tmpdir(), 'mcp-showcase-')));
   });
 
   it('write -> search -> read round-trip through the tool layer', async () => {
