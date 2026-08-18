@@ -7,9 +7,10 @@ North star spec: `vaults/agentage/specs/north-star-store-core.md`.
 ## Install
 
 ```bash
-# GitHub Packages - needs a read:packages token in .npmrc
 npm install @agentage/store-core
 ```
+
+MIT licensed, published to public npm. Requires **Node >=22**.
 
 ## Quickstart
 
