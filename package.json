@@ -6,7 +6,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/agentage/store-core.git"
+    "url": "git+https://github.com/agentage/memory-core.git"
   },
   "publishConfig": {
     "access": "public"
