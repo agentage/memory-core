@@ -46,6 +46,9 @@ export interface VaultStore extends VaultReader, VaultWriter {
   capabilities(): StoreCapabilities;
 }
 
+// GUARANTEE: a null/[]/empty result here means definitively-not-found. Infra
+// failure (binary missing, spawn kill, EACCES, timeout/byte-cap) throws
+// StoreError('unavailable') with the cause attached - never a degraded answer.
 export interface VaultReader {
   // clamp defaults to true (model-safe 64KB body budget); pass { clamp: false }
   // for full-body reads (REST note read, export flows).
@@ -60,6 +63,8 @@ export interface VaultReader {
 
 export interface VaultWriter {
   write(i: WriteInput, author?: WriteAuthor): Promise<WriteResult>;
+  // Same guarantee as the reader: null/false = the doc is not there, and a store
+  // that could not run the change throws StoreError('unavailable') instead.
   edit(i: EditInput, author?: WriteAuthor): Promise<WriteResult | null>;
   delete(path: string): Promise<boolean>;
 }

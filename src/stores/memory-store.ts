@@ -1,7 +1,8 @@
 // In-memory VaultStore: the contract's reference implementation and the dev/test
 // fixture. Thin by design - all semantics (edit modes, tree shape, ranking,
 // guards) come from the contract layer, so this file is the template every real
-// store follows: validate -> guard -> persist -> emit.
+// store follows: validate -> guard -> persist -> emit. Never 'unavailable':
+// there is no infrastructure to fail, so null/false here are always not-found.
 
 import { applyEdit } from '../contract/edit.js';
 import { deriveTags, serializeDoc, titleFromPath } from '../contract/memory-doc.js';

@@ -216,7 +216,7 @@ export const createBareGitStore = (repoDir: string, opts: BareGitStoreOptions = 
         ['grep', '-o', '-I', '-i', '-F', '--no-color', '--threads=2', '-e', q, s.version],
         { timeoutMs: SEARCH_TIMEOUT_MS }
       );
-      if (!grep) return { results: [] };
+      if (!grep) return { results: [] }; // exit 1 = no match; an infra failure already threw
       const counts = new Map<string, number>();
       for (const line of grep.split('\n')) {
         if (!line) continue;
