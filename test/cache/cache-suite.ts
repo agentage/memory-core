@@ -69,7 +69,7 @@ export const keyArb = fc
   )
   .map((segments) => segments.join('/'))
   // Control characters are not "printable keys" and NUL breaks every filesystem.
-  .filter((key) => key.length > 0 && !/[\u0000-\u001f\u007f]/.test(key));
+  .filter((key) => key.length > 0 && !Array.from(key).some((ch) => ch < ' ' || ch === '\u007f'));
 
 export const payloadArb = fc.oneof(
   { weight: 8, arbitrary: fc.uint8Array({ maxLength: 512 }) },

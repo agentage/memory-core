@@ -39,7 +39,7 @@
     "test:coverage": "vitest run --coverage",
     "verify": "npm run type-check && npm run lint && npm run format:check && npm run test:coverage && npm run build && npm run smoke:dist",
     "prepublishOnly": "npm run verify",
-    "smoke:dist": "node --input-type=module -e \"await import('./dist/index.js'); const k = await import('./dist/conformance/index.js'); if (typeof k.contractSuite !== 'function' || !Array.isArray(k.HOSTILE_PATHS)) process.exit(1); console.log('dist smoke ok');\""
+    "smoke:dist": "node --input-type=module -e \"const m = await import('./dist/index.js'); const k = await import('./dist/conformance/index.js'); if (typeof k.contractSuite !== 'function' || !Array.isArray(k.HOSTILE_PATHS) || typeof m.MemoryCache !== 'function' || typeof m.FileCache !== 'function' || typeof m.TieredCache !== 'function') process.exit(1); console.log('dist smoke ok');\""
   },
   "dependencies": {
     "yaml": "^2.6.0"

@@ -103,3 +103,14 @@ export {
   type DerivedCache,
   type DerivedView,
 } from './contract/derived.js';
+
+// Generic byte cache - deliberately knows nothing about vaults, docs or stores.
+export {
+  FileCache,
+  MemoryCache,
+  TieredCache,
+  type Cache,
+  type CacheErrorHook,
+  type FileCacheOptions,
+  type MemoryCacheOptions,
+} from './cache/index.js';

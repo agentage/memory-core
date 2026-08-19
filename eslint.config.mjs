@@ -15,5 +15,31 @@ export default tseslint.config(
       '@typescript-eslint/no-explicit-any': 'error',
       '@typescript-eslint/consistent-type-imports': 'error',
     },
+  },
+  {
+    // The cache module is type-agnostic on purpose: it manages bytes and knows
+    // zero engine semantics. This lint gate IS that boundary.
+    files: ['src/cache/**/*.ts'],
+    rules: {
+      '@typescript-eslint/no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: [
+                '**/contract',
+                '**/contract/**',
+                '**/stores',
+                '**/stores/**',
+                '../index.js',
+                '../../index.js',
+              ],
+              message:
+                'src/cache is engine-agnostic: it manages bytes only. No contract/store types.',
+            },
+          ],
+        },
+      ],
+    },
   }
 );

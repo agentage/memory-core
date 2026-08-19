@@ -48,6 +48,26 @@ const cache = createDerivedCache(store, '/data/repos/alice01/main.cache');
 const stats = await cache.get(createStatsView('/data/repos/alice01/main.git')); // { files, folders, sizeBytes }
 ```
 
+### Byte cache (generic - knows nothing about vaults)
+
+A type-agnostic cache for anything expensive to recompute. It manages keys and bytes, never engine types (a lint gate enforces the boundary), so it composes with any layer above it.
+
+```ts
+import { FileCache, MemoryCache, TieredCache, type Cache } from '@agentage/store-core';
+
+// construct once per process and share: the budget only binds if everyone draws on one pool
+const cache: Cache = new TieredCache(
+  new MemoryCache({ maxBytes: 64 * 1024 * 1024 }), // LRU, keys counted with values
+  new FileCache({ dir: '/data/cache' }) // checksummed, temp+rename, survives restarts
+);
+
+await cache.set('alice01/main/tree', payload); // best-effort: never throws
+await cache.get('alice01/main/tree'); // Uint8Array | null - a corrupt entry reads as a miss
+await cache.delete('alice01/'); // sweep every key under the prefix
+```
+
+Guarantees: get/set/delete never throw, a torn or bit-rotted entry reads as `null` (never as wrong bytes), and `MemoryCache` never exceeds its byte budget. All three implementations pass one shared suite - `test/cache/cache-suite.ts`.
+
 ### Swap the store, keep the contract
 
 ```ts

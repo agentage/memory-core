@@ -2,7 +2,8 @@
 // cache has - torn writes, bit rot, restarts, and keys no filesystem accepts raw.
 
 import { Buffer } from 'node:buffer';
-import { mkdtemp, readdir, readFile, stat, truncate, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { mkdir, mkdtemp, readdir, readFile, stat, truncate, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -49,7 +50,8 @@ describe('FileCache: durability', () => {
     await cache.set('k/1', bytes('the quick brown fox'));
     const file = await onlyEntry(dir);
     const raw = await readFile(file);
-    raw[raw.length - 3] ^= 0xff; // flip a byte inside the value region
+    const at = raw.length - 3; // a byte inside the value region
+    raw.writeUInt8(raw.readUInt8(at) ^ 0xff, at);
     await writeFile(file, raw);
 
     expect(await cache.get('k/1')).toBeNull();
@@ -61,6 +63,27 @@ describe('FileCache: durability', () => {
     const file = await onlyEntry(dir);
     await writeFile(file, Buffer.alloc(200, 0x41));
     expect(await cache.get('k/1')).toBeNull();
+  });
+
+  it('returns null for an entry truncated to a bare header', async () => {
+    await cache.set('k/1', bytes('a value worth keeping'));
+    await truncate(await onlyEntry(dir), 44); // header only: the key now outruns the file
+    expect(await cache.get('k/1')).toBeNull();
+  });
+
+  it('returns null for a well-formed entry stored under another key name', async () => {
+    await cache.set('k/1', bytes('one'));
+    const raw = await readFile(await onlyEntry(dir));
+    const other = createHash('sha256').update('k/2', 'utf8').digest('hex');
+    await writeFile(join(dir, `${other}.cache`), raw); // the key inside says k/1
+    expect(await cache.get('k/2')).toBeNull();
+    expect(same(await cache.get('k/1'), bytes('one'))).toBe(true);
+  });
+
+  it('returns null for a corrupt entry even with no error hook attached', async () => {
+    await cache.set('k/1', bytes('v'));
+    await writeFile(await onlyEntry(dir), Buffer.alloc(80, 0x41));
+    expect(await new FileCache({ dir }).get('k/1')).toBeNull();
   });
 
   it('returns null for a zero-length entry file', async () => {
@@ -127,6 +150,37 @@ describe('FileCache: durability', () => {
     await writeFile(await onlyEntry(dir), Buffer.alloc(10, 0x41));
     await cache.delete('no-such-prefix/');
     expect(await entryFiles(dir)).toHaveLength(0);
+  });
+
+  it('sweeps entries whose header lies about the key length', async () => {
+    const forged = (keyLen: number, name: string): Promise<void> => {
+      const header = Buffer.alloc(44);
+      Buffer.from('ACACHE1\n', 'utf8').copy(header, 0);
+      header.writeUInt32LE(keyLen, 8);
+      return writeFile(join(dir, `${name.repeat(64)}.cache`), Buffer.concat([header, bytes('sh')]));
+    };
+    await forged(0x0fffffff, '0'); // longer than any cache would ever allocate
+    await forged(1000, 'a'); // plausible, but the file is 2 bytes long
+
+    await cache.delete('');
+    expect(await entryFiles(dir)).toHaveLength(0);
+  });
+
+  it('reports nothing when sweeping a cache dir that was never created', async () => {
+    const fresh = new FileCache({
+      dir: join(dir, 'not-yet'),
+      onError: (op, key) => errors.push({ op, key }),
+    });
+    await expect(fresh.delete('')).resolves.toBeUndefined();
+    expect(errors).toEqual([]);
+  });
+
+  it('never throws on a directory masquerading as an entry file', async () => {
+    await cache.set('a/1', bytes('one'));
+    await mkdir(join(dir, `${'1'.repeat(64)}.cache`));
+    await expect(cache.delete('')).resolves.toBeUndefined();
+    expect(await cache.get('a/1')).toBeNull(); // the real entry was still swept
+    expect(errors.map((e) => e.op)).toContain('delete');
   });
 
   it('never throws when the cache dir cannot exist, and reports it', async () => {
