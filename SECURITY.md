@@ -15,4 +15,4 @@ The store is the trust boundary between untrusted input (paths, doc content, que
 
 Planned with the git stores: pushed-content validation (`validateTree` pre-receive), symlink non-following, git args hygiene corpus, SSRF policy for webhook hooks, FTS injection corpus, nightly fuzzing.
 
-Report issues directly to the repo owner (private repo).
+Report vulnerabilities privately via GitHub Security Advisories (Security tab) - do not open public issues.
