@@ -60,6 +60,33 @@ stores.get(key, () => createBareGitStore(pathFor(key))); // same key = same inst
 
 Type-agnostic by construction (it never imports an engine type), so the same class caches stores, parsed configs, watchers - anything rebuildable. `dispose` is best-effort cleanup on eviction/`delete`, never a correctness hook.
 
+### Many vaults, one root (the server shape)
+
+```ts
+import {
+  createBareGitStore,
+  createVaultContainer,
+  ensureBareRepo,
+  ObjectCache,
+  type VaultStore,
+} from '@agentage/store-core';
+
+const container = createVaultContainer({
+  root: '/data/repos', // layout: <root>/<userId>/<vault>.git
+  store: (dir) => createBareGitStore(dir),
+  provision: ensureBareRepo, // store-kind-specific init: the ONLY path that creates
+  cache: new ObjectCache<VaultStore>({ max: 256, dispose: (s, key) => detach(s, key) }),
+});
+
+const access = await resolveAccess(principal); // host policy: token claims, plan limits, DB
+await container.list(access); // allowlist-intersected, sorted
+await container.create(access, 'work'); // gated by canCreate, idempotent
+await container.open(access, 'work'); // NEVER provisions - unknown_vault if absent
+await container.remove(access, 'work', stamp); // gated by canDelete -> <vault>.deleted-<stamp>.git
+```
+
+`Access` (`{ userId, vaults: Set | '*', canCreate, canDelete }`) is the only authority the container reads: the host decides who may touch which vault - `ResolveAccess` is a **type** here, policy never enters the engine - and the container enforces that decision against storage facts. It never reads the clock (deletion stamps are supplied by the caller), never provisions on a read path, and never configures the cache: the composition root builds the `ObjectCache` with its own `dispose`, because whoever creates subscriptions owns tearing them down. Refusals are coded: `invalid_path` (hostile id or stamp), `forbidden` (outside the grant, or missing canCreate/canDelete), `unknown_vault` (not provisioned).
+
 ### Swap the store, keep the contract
 
 ```ts
@@ -99,6 +126,7 @@ securitySuite({ name: 'my-store', make: () => createMyStore() });
 ```
 test/
 ├── unit/          contract helpers + fuzzing (property oracles, memory-vs-git differential)
+├── container/     access matrix, containment, lifecycle (no-provision + tombstone proofs)
 ├── stores/        conformance + security per implementation
 ├── integration/   consumer showcases + e2e lifecycle
 └── perf/          non-functional gate - budgets asserted AND printed to the CI job summary

@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
-import { mkdtemp, chmod, mkdir } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { chmod, mkdir, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -7,88 +8,10 @@ import {
   bundleRepo,
   checkRootWritable,
   createBareGitStore,
-  createMemoryStore,
-  createStorePool,
   destroyRepo,
+  ensureBareRepo,
   listVaultDirs,
-  provisionIfEmpty,
-  type StoreEvent,
 } from '../../src/index.js';
-
-describe('store pool (tenant-blind, storage-blind)', () => {
-  it('one live instance per key; keys are opaque', () => {
-    let creates = 0;
-    const pool = createStorePool({
-      create: () => {
-        creates++;
-        return createMemoryStore();
-      },
-    });
-    const a1 = pool.get('anything at all / even spaces');
-    const a2 = pool.get('anything at all / even spaces');
-    expect(a1).toBe(a2);
-    expect(creates).toBe(1);
-  });
-
-  it('LRU-evicts beyond maxOpen and rebuilds lazily', async () => {
-    let creates = 0;
-    const pool = createStorePool({
-      create: () => {
-        creates++;
-        return createMemoryStore();
-      },
-      maxOpen: 2,
-    });
-    pool.get('a');
-    pool.get('b');
-    pool.get('a'); // refresh a - b is now oldest
-    pool.get('c'); // evicts b
-    expect(pool.keys()).toEqual(['a', 'c']);
-    pool.get('b'); // rebuilt
-    expect(creates).toBe(4);
-  });
-
-  it('tags every pooled event with its key (the multi-vault audit tap)', async () => {
-    const seen: Array<[string, string]> = [];
-    const pool = createStorePool({
-      create: () => createMemoryStore(),
-      onEvent: (key, e: StoreEvent) => seen.push([key, e.type]),
-    });
-    await pool.get('vault-one').write({ path: 'a.md', body: 'x' });
-    await pool.get('vault-two').write({ path: 'b.md', body: 'y' });
-    await pool.get('vault-one').delete('a.md');
-    expect(seen).toEqual([
-      ['vault-one', 'write'],
-      ['vault-two', 'write'],
-      ['vault-one', 'delete'],
-    ]);
-    pool.close();
-    await pool.get('vault-three'); // resolving after close still works; tap is rebuilt per get
-  });
-
-  it('works over git stores with a host-owned layout (rootDir as a function)', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'pool-git-'));
-    const pool = createStorePool({
-      // The HOST decides the layout and any tenant semantics - not the pool.
-      create: (key) => createBareGitStore(join(root, `${key.replace(/[^a-zA-Z0-9-]/g, '_')}.git`)),
-    });
-    await pool.get('tenantA:main').write({ path: 'n.md', body: 'isolated' });
-    expect(await pool.get('tenantB:main').read('n.md')).toBeNull();
-    expect((await pool.get('tenantA:main').read('n.md'))!.body).toBe('isolated');
-  });
-
-  it('provisionIfEmpty seeds once, on any store kind', async () => {
-    const seed = [{ path: 'welcome.md', body: 'hello' }];
-    const mem = createMemoryStore();
-    expect(await provisionIfEmpty(mem, seed)).toEqual({ created: true });
-    expect(await provisionIfEmpty(mem, seed)).toEqual({ created: false });
-    const root = await mkdtemp(join(tmpdir(), 'prov-'));
-    const git = createBareGitStore(join(root, 'v.git'));
-    expect(await provisionIfEmpty(git, seed)).toEqual({ created: true });
-    expect(await provisionIfEmpty(git, seed)).toEqual({ created: false });
-    expect((await git.read('welcome.md'))!.body).toBe('hello');
-  });
-});
 
 describe('git-admin (per-vault, user-blind)', () => {
   it('lists vault dirs, bundles a live repo, null-bundles an empty one', async () => {
@@ -102,6 +25,16 @@ describe('git-admin (per-vault, user-blind)', () => {
     expect(bundle).toBeInstanceOf(Buffer);
     expect(bundle!.length).toBeGreaterThan(0);
     expect(await bundleRepo(join(root, 'empty.git'))).toBeNull();
+  });
+
+  it('ensureBareRepo makes an addressable empty vault, idempotently', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'ensure-'));
+    const dir = join(root, 'nested', 'v.git');
+    await ensureBareRepo(dir);
+    await ensureBareRepo(dir);
+    expect(existsSync(join(dir, 'HEAD'))).toBe(true);
+    expect(await createBareGitStore(dir).version()).toBeNull(); // exists, still empty
+    expect(await listVaultDirs(join(root, 'nested'))).toEqual(['v']);
   });
 
   it('bundle round-trips: a clone from the bundle contains the notes', async () => {

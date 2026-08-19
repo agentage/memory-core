@@ -68,15 +68,18 @@ export {
 } from './contract/tree.js';
 export { StoreError, storeErrorCode, type StoreErrorCode } from './contract/errors.js';
 export {
-  createStorePool,
-  provisionIfEmpty,
-  type StorePool,
-  type StorePoolOptions,
-} from './contract/store-pool.js';
+  createVaultContainer,
+  type Access,
+  type Principal,
+  type ResolveAccess,
+  type VaultContainer,
+  type VaultContainerOptions,
+} from './container/vault-container.js';
 export {
   bundleRepo,
   checkRootWritable,
   destroyRepo,
+  ensureBareRepo,
   listVaultDirs,
 } from './stores/bare-git/git-admin.js';
 export {

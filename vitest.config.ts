@@ -19,6 +19,8 @@ export default defineConfig({
         statements: 70,
         // Tiny, pure, shared-by-everything: cache code is held to a higher bar.
         'src/cache/**': { branches: 90, functions: 90, lines: 90, statements: 90 },
+        // The container is the tenancy boundary - every gate must be exercised.
+        'src/container/**': { branches: 85, functions: 85, lines: 85, statements: 85 },
       },
     },
   },

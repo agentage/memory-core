@@ -21,6 +21,11 @@ export const listVaultDirs = async (dir: string): Promise<string[]> => {
   }
 };
 
+// Create the bare repo up front, idempotently - the container's provision hook
+// for git vaults, so a new vault exists before anything is ever written to it.
+export const ensureBareRepo = async (repoDir: string): Promise<void> =>
+  createGitRunner(repoDir).ensureRepo();
+
 // A clone-able bundle of the whole vault (history included) - the export path.
 export const bundleRepo = async (repoDir: string): Promise<Buffer | null> => {
   try {

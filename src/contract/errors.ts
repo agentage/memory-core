@@ -2,17 +2,27 @@
 // TEXT stays canonical - models are trained on it). Not-found is modeled by
 // null/false returns and is never thrown; `unavailable` is its opposite - the
 // store could not answer at all, so the caller must never read it as absence.
+// `unknown_vault` is the one thrown absence: addressing a whole vault that is
+// not there is an addressing failure, not an empty read.
 //
 // Mapping table (the one true rendering, for every surface):
 //   code            HTTP   MCP tool result
 //   invalid_path    400    isError, message verbatim
+//   forbidden       403    isError, message verbatim (access decided by the host)
+//   unknown_vault   404    isError, message verbatim (the VAULT, never a doc)
 //   doc_too_large   413    isError, message verbatim
 //   restricted      422    isError, message verbatim (canonical refusal)
 //   wire_version    400    n/a (transport-level)
 //   unavailable     503    isError, message verbatim (transient - retryable)
 
 export type StoreErrorCode =
-  'invalid_path' | 'doc_too_large' | 'restricted' | 'wire_version' | 'unavailable';
+  | 'invalid_path'
+  | 'forbidden'
+  | 'unknown_vault'
+  | 'doc_too_large'
+  | 'restricted'
+  | 'wire_version'
+  | 'unavailable';
 
 export class StoreError extends Error {
   constructor(
