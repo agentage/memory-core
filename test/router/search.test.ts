@@ -43,10 +43,9 @@ const build = async (docs: Doc[]): Promise<{ forward: Router; reversed: Router }
     clocks[d.vault]?.push(d.stamp);
   }
   const w = await world(seeds, { over: { vaults: new Set(VAULTS) }, clocks });
-  const opts = { defaultVault: 'alpha' };
   return {
-    forward: createRouter(w.container, w.access, opts),
-    reversed: createRouter(reverseList(w.container), w.access, opts),
+    forward: createRouter(w.container, w.access),
+    reversed: createRouter(reverseList(w.container), w.access),
   };
 };
 
@@ -163,7 +162,7 @@ describe('router federated search', () => {
     expect(small.results).toHaveLength(3);
   });
 
-  it('applies a plain folder filter inside every vault', async () => {
+  it('scopes a fan-out to one vault with an @folder, and refuses an unprefixed one', async () => {
     const w = await world(
       {
         alpha: [
@@ -174,11 +173,18 @@ describe('router federated search', () => {
       },
       { over: { vaults: new Set(['alpha', 'beta']) } }
     );
-    const r = createRouter(w.container, w.access, { defaultVault: 'alpha' });
-    const res = await r.search({ query: 'zz', folder: 'notes' });
-    expect(res.results.map((h) => h.path).sort()).toEqual([
+    const r = createRouter(w.container, w.access);
+    expect(
+      (await r.search({ query: 'zz', folder: '@alpha/notes' })).results.map((h) => h.path)
+    ).toEqual(['@alpha/notes/a.md']);
+    expect((await r.search({ query: 'zz' })).results.map((h) => h.path).sort()).toEqual([
       '@alpha/notes/a.md',
+      '@alpha/other/b.md',
       '@beta/notes/c.md',
     ]);
+    // A folder is a ref too: without @vault it cannot address anything.
+    await expect(r.search({ query: 'zz', folder: 'notes' })).rejects.toMatchObject({
+      code: 'invalid_path',
+    });
   });
 });

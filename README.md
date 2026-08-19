@@ -93,17 +93,20 @@ await container.remove(access, 'work', stamp); // gated by canDelete -> <vault>.
 import { createRouter } from '@agentage/store-core';
 
 // pure binding - no IO here, so build one per request
-const router = createRouter(container, access, { defaultVault: 'main' });
+const router = createRouter(container, access);
 
-await router.read('inbox/idea.md'); // plain ref -> the default vault
-await router.write('@work/plan.md', { body: 'ship it' }, client); // @vault/ -> that vault
-await router.search({ query: 'zebra' }); // fans out across every granted vault, merged + re-paged
+await router.read('@main/inbox/idea.md'); // every ref is @vault/path
+await router.write('@work/plan.md', { body: 'ship it' }, client);
+await router.search({ query: 'zebra' }); // no folder: fans out across every granted vault
 await router.list({}); // no ref: each vault as a top-level @folder
+await router.list({ ref: '@work/dir' }); // list and search may scope to @vault or @vault/folder
 ```
 
-A ref is `path` (the default vault) or `@vault/path`. **One granted vault = the router is invisible**: no prefix is required going in, none is emitted coming out, and every verb returns exactly what the store returns - same values, same cursors. From two vaults on, returned paths are re-tagged `@vault/…` so everything the caller sees is addressable again, and `search` merges the per-vault pages into the contract's total order (score desc, recency desc, path asc) before re-paging.
+**One input rule:** a ref is always `@vault/path`. Anything without the prefix is `invalid_path` - there is no default vault and no single-vault special case, so a caller that wants a default resolves it itself. **One output rule:** every path the router emits - `view.path`, write/edit results, search hits, list entries and folders - comes back as `@vault/path`, so every output round-trips as an input. The two unscoped shapes are the discovery ones: `list({})` is the vault directory, `search({ query })` fans out across every granted vault and merges the per-vault pages into the contract's total order (score desc, recency desc, path asc) before re-paging.
 
-The router adds addressing and nothing else: guards and paging stay in the store, access stays in the container, and refusals pass through with their codes (`forbidden` outside the grant, `restricted`/`invalid_path` from the store). The one refusal it owns is `unknown_vault` for a granted-but-unprovisioned `@vault` - its message text is a frozen client contract, exported as `unknownVaultMessage`.
+**Router = permission check + routing to the corresponding vault instance. No default vault.** It is the responsible layer for permission: the ref's vault is checked against `Access` BEFORE any container call, so an ungranted vault is refused with `forbidden` and zero container interaction (the container's own gate stays the last line of defense). Everything else stays where it belongs - guards, ranking and paging in the store, provisioning in the container - and their refusals pass through untouched (`restricted`, `invalid_path`, `unavailable`). The one refusal the router owns is `unknown_vault` for a granted-but-unprovisioned `@vault`: its message text is a frozen client contract, exported as `unknownVaultMessage`.
+
+Strip the tags off a response and what is left is byte-for-byte what calling the store directly returns - same values, same cursors, same events.
 
 ### Swap the store, keep the contract
 

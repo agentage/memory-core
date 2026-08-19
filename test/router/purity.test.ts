@@ -74,7 +74,7 @@ describe('router is a pure binding', () => {
   it('performs no container call at construction', () => {
     const calls: string[] = [];
     const { container } = hostileContainer(calls);
-    expect(() => createRouter(container, access(), { defaultVault: 'main' })).not.toThrow();
+    expect(() => createRouter(container, access())).not.toThrow();
     expect(calls).toEqual([]);
   });
 
@@ -83,10 +83,29 @@ describe('router is a pure binding', () => {
     const { container } = hostileContainer(calls);
     const r = createRouter(container, access());
     expect(calls).toEqual([]);
-    await expect(r.read('a.md')).rejects.toThrow('container touched');
+    await expect(r.read('@main/a.md')).rejects.toThrow('container touched');
     expect(calls).toEqual(['list']);
     await expect(r.search({ query: 'x' })).rejects.toThrow('container touched');
     expect(calls).toEqual(['list', 'list']);
+  });
+
+  it('refuses an ungranted vault without reaching the container at all', async () => {
+    const calls: string[] = [];
+    const { container } = hostileContainer(calls);
+    const r = createRouter(container, access({ vaults: new Set(['main']) }));
+    await expect(r.read('@other/a.md')).rejects.toMatchObject({ code: 'forbidden' });
+    await expect(r.write('@other/a.md', { body: 'x' })).rejects.toMatchObject({
+      code: 'forbidden',
+    });
+    await expect(r.edit('@other/a.md', { mode: 'append', body: 'x' })).rejects.toMatchObject({
+      code: 'forbidden',
+    });
+    await expect(r.delete('@other/a.md')).rejects.toMatchObject({ code: 'forbidden' });
+    await expect(r.list({ ref: '@other' })).rejects.toMatchObject({ code: 'forbidden' });
+    await expect(r.search({ query: 'x', folder: '@other' })).rejects.toMatchObject({
+      code: 'forbidden',
+    });
+    expect(calls).toEqual([]);
   });
 
   it('builds many routers without a single call', () => {
@@ -101,11 +120,13 @@ describe('router adds no policy of its own', () => {
   it('does not re-run the store guards on write or edit', async () => {
     const log: string[] = [];
     const { store } = guardlessStore(log);
-    const r = createRouter(soloContainer(store), access(), { defaultVault: 'solo' });
+    const r = createRouter(soloContainer(store), access({ vaults: new Set(['solo']) }));
     const secret = `api_key: sk-${'a'.repeat(24)}`;
-    await expect(r.write('k.md', { body: secret })).resolves.toMatchObject({ path: 'k.md' });
+    await expect(r.write('@solo/k.md', { body: secret })).resolves.toMatchObject({
+      path: '@solo/k.md',
+    });
     await expect(
-      r.edit('k.md', { mode: 'str_replace', old_str: 'x', new_str: secret })
+      r.edit('@solo/k.md', { mode: 'str_replace', old_str: 'x', new_str: secret })
     ).resolves.not.toBeNull();
     expect(log).toEqual([`write:k.md:${secret}:-`, `edit:k.md:${secret}`]);
   });
@@ -113,18 +134,18 @@ describe('router adds no policy of its own', () => {
   it('does not clamp a read - the body arrives exactly as the store returned it', async () => {
     const log: string[] = [];
     const { store, body } = guardlessStore(log);
-    const r = createRouter(soloContainer(store), access(), { defaultVault: 'solo' });
-    const view = await r.read('big.md');
+    const r = createRouter(soloContainer(store), access({ vaults: new Set(['solo']) }));
+    const view = await r.read('@solo/big.md');
     expect(view?.body).toBe(body);
-    await r.read('big.md', { clamp: false });
+    await r.read('@solo/big.md', { clamp: false });
     expect(log).toEqual(['read:big.md:undefined', 'read:big.md:false']);
   });
 
   it('passes an author through to the store untouched', async () => {
     const log: string[] = [];
     const { store } = guardlessStore(log);
-    const r = createRouter(soloContainer(store), access(), { defaultVault: 'solo' });
-    await r.write('a.md', { body: 'b' }, { id: 'cli', name: 'Agentage CLI' });
+    const r = createRouter(soloContainer(store), access({ vaults: new Set(['solo']) }));
+    await r.write('@solo/a.md', { body: 'b' }, { id: 'cli', name: 'Agentage CLI' });
     expect(log).toEqual(['write:a.md:b:cli']);
   });
 
@@ -137,7 +158,7 @@ describe('router adds no policy of its own', () => {
         throw boom;
       },
     };
-    const r = createRouter(soloContainer(failing), access(), { defaultVault: 'solo' });
-    await expect(r.read('a.md')).rejects.toBe(boom);
+    const r = createRouter(soloContainer(failing), access({ vaults: new Set(['solo']) }));
+    await expect(r.read('@solo/a.md')).rejects.toBe(boom);
   });
 });

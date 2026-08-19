@@ -1,7 +1,8 @@
-// More than one granted vault turns the @vault/ prefix on: it is accepted going
-// in and re-applied to every path coming out, so everything the caller sees is
-// addressable again. The router adds exactly this - refusals still come from the
-// container (forbidden) and the store (restricted, invalid_path) untouched.
+// Several granted vaults, one addressable surface: `@vault/` routes in, every
+// emitted path carries it back out, list with no ref is the vault directory, and
+// search with no folder fans out. The router adds exactly this - refusals come
+// from its own permission gate (forbidden), from the store (restricted,
+// invalid_path), or are the one message it owns (unknown_vault).
 
 import { beforeEach, describe, expect, it } from 'vitest';
 import { StoreError } from '../../src/index.js';
@@ -22,21 +23,13 @@ const seeds = {
 
 const granted = new Set(['main', 'work', 'ghost']); // ghost is granted but never provisioned
 
-describe('router federation (>1 vault)', () => {
+describe('router federation', () => {
   let w: World;
   let r: Router;
 
   beforeEach(async () => {
     w = await world(seeds, { over: { vaults: granted } });
-    r = createRouter(w.container, w.access, { defaultVault: 'main' });
-  });
-
-  it('resolves a plain ref to the default vault and tags the result', async () => {
-    const written = await r.write('bare.md', { body: 'in main' });
-    expect(written.path).toBe('@main/bare.md');
-    expect((await r.read('@main/bare.md'))?.body).toBe('in main');
-    expect((await r.read('bare.md'))?.path).toBe('@main/bare.md');
-    expect(await r.read('@work/bare.md')).toBeNull();
+    r = createRouter(w.container, w.access);
   });
 
   it('routes every verb by @vault and tags every returned path', async () => {
@@ -45,6 +38,7 @@ describe('router federation (>1 vault)', () => {
     const edited = await r.edit('@work/new.md', { mode: 'append', body: 'more' });
     expect(edited?.path).toBe('@work/new.md');
     expect((await r.read('@work/new.md'))?.path).toBe('@work/new.md');
+    expect(await r.read('@main/new.md')).toBeNull(); // no cross-vault leak
     expect(await r.delete('@work/new.md')).toBe(true);
     expect(await r.read('@work/new.md')).toBeNull();
   });
@@ -87,15 +81,22 @@ describe('router federation (>1 vault)', () => {
     ]);
   });
 
-  it('prefixes list entries under an @vault folder and under the default vault', async () => {
+  it('prefixes list entries under an @vault folder', async () => {
     const scoped = await r.list({ ref: '@work/dir' });
     expect(scoped.folder).toBe('@work/dir');
     expect(scoped.entries.map((e) => e.path)).toEqual(['@work/dir/q.md']);
     const vaultRoot = await r.list({ ref: '@work' });
     expect(vaultRoot.folder).toBe('@work');
     expect(vaultRoot.entries.map((e) => e.path).sort()).toEqual(['@work/dir', '@work/p.md']);
-    const plain = await r.list({ ref: 'dir', depth: 1 });
-    expect(plain.folder).toBe('@main/dir'); // a bare folder still resolves in the default vault
+  });
+
+  it('refuses an unprefixed ref - there is no default vault', async () => {
+    await expect(r.read('a.md')).rejects.toMatchObject({ code: 'invalid_path' });
+    await expect(r.write('a.md', { body: 'x' })).rejects.toMatchObject({ code: 'invalid_path' });
+    await expect(r.list({ ref: 'dir' })).rejects.toMatchObject({ code: 'invalid_path' });
+    await expect(r.search({ query: 'zebra', folder: 'dir' })).rejects.toMatchObject({
+      code: 'invalid_path',
+    });
   });
 
   it('refuses a granted-but-absent vault with the frozen CLI message', async () => {
@@ -111,12 +112,13 @@ describe('router federation (>1 vault)', () => {
       message: GOLDEN,
     });
     await expect(r.list({ ref: '@ghost' })).rejects.toMatchObject({ message: GOLDEN });
+    expect(w.opened).toEqual([]); // refused before the vault was opened
   });
 
-  it('passes the container refusal through for a vault outside the grant', async () => {
+  it('refuses a vault outside the grant itself, without a container call', async () => {
     const err = await r.read('@secret/a.md').catch((e: unknown) => e);
     expect(err).toMatchObject({ code: 'forbidden', message: 'no access to vault: secret' });
-    expect(w.opened).toEqual([]);
+    expect(w.calls).toEqual([]);
   });
 
   it('passes store refusals through untouched', async () => {
@@ -128,22 +130,11 @@ describe('router federation (>1 vault)', () => {
     });
   });
 
-  it('falls back to the first listed vault when no default is configured', async () => {
-    const bare = createRouter(w.container, w.access);
-    expect((await bare.write('x.md', { body: 'y' })).path).toBe('@main/x.md');
-  });
-
-  it('honours a configured default vault', async () => {
-    const onWork = createRouter(w.container, w.access, { defaultVault: 'work' });
-    expect((await onWork.read('p.md'))?.body).toBe('work zebra');
-    expect((await onWork.list({ ref: 'dir' })).folder).toBe('@work/dir');
-  });
-
-  it('refuses every verb when the connection has no vault at all', async () => {
+  it('answers the discovery verbs emptily when the connection has no vault', async () => {
     const empty = await world({}, { over: { vaults: new Set<string>() } });
     const none = createRouter(empty.container, empty.access);
-    await expect(none.read('a.md')).rejects.toMatchObject({ code: 'unknown_vault' });
-    await expect(none.list({})).rejects.toMatchObject({ code: 'unknown_vault' });
-    await expect(none.search({ query: 'x' })).rejects.toMatchObject({ code: 'unknown_vault' });
+    expect(await none.list({})).toEqual({ folder: '', entries: [], truncated: false, files: 0 });
+    expect(await none.search({ query: 'x' })).toEqual({ results: [] });
+    await expect(none.read('@main/a.md')).rejects.toMatchObject({ code: 'forbidden' });
   });
 });

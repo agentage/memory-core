@@ -1,8 +1,7 @@
-// One granted vault = full transparency. The router is then a pass-through: no
-// @ prefix is required going in, none is ever emitted coming out, and every verb
-// returns exactly what calling the store directly returns - same values, same
-// cursors, same events. A consumer that gains a second vault later changes its
-// output; a single-vault consumer must not be able to tell the router is there.
+// The router adds addressing and NOTHING else: strip the `@vault/` tags off a
+// response and what is left must be byte-for-byte what calling the store directly
+// returns - same values, same cursors, same events, on every verb. That is the
+// whole promise of the layer, and it is what makes a store swap invisible above it.
 
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { SeedFile, StoreEvent, VaultStore } from '../../src/index.js';
@@ -17,7 +16,11 @@ const NOTES: SeedFile[] = [
 
 const solo = (): Promise<World> => world({ main: NOTES }, { over: { vaults: new Set(['main']) } });
 
-describe('router single-vault transparency', () => {
+// Remove the addressing layer: `@main/x` -> `x`, `@main` -> the vault root ''.
+const untag = <T>(value: T): T =>
+  JSON.parse(JSON.stringify(value).replaceAll('"@main/', '"').replaceAll('"@main"', '""')) as T;
+
+describe('router results are the store results, modulo the @vault tag', () => {
   let w: World;
   let r: Router;
   let store: VaultStore;
@@ -28,40 +31,44 @@ describe('router single-vault transparency', () => {
     store = await w.direct('main');
   });
 
-  it('read is identical, hit and miss, clamped and unclamped', async () => {
-    expect(await r.read('a.md')).toEqual(await store.read('a.md'));
-    expect(await r.read('a.md', { clamp: false })).toEqual(
+  it('read matches, hit and miss, clamped and unclamped', async () => {
+    expect(untag(await r.read('@main/a.md'))).toEqual(await store.read('a.md'));
+    expect(untag(await r.read('@main/a.md', { clamp: false }))).toEqual(
       await store.read('a.md', { clamp: false })
     );
-    expect(await r.read('dir/b.md')).toEqual(await store.read('dir/b.md'));
-    expect(await r.read('missing.md')).toEqual(await store.read('missing.md'));
+    expect(untag(await r.read('@main/dir/b.md'))).toEqual(await store.read('dir/b.md'));
+    expect(await r.read('@main/missing.md')).toBeNull();
   });
 
-  it('list is identical across folder, depth, tags and cursor paging', async () => {
-    expect(await r.list({})).toEqual(await store.list({}));
-    expect(await r.list({ ref: 'dir' })).toEqual(await store.list({ folder: 'dir' }));
-    expect(await r.list({ ref: 'dir', depth: 1 })).toEqual(
+  it('list matches across folder, depth, tags and cursor paging', async () => {
+    expect(untag(await r.list({ ref: '@main' }))).toEqual(await store.list({}));
+    expect(untag(await r.list({ ref: '@main/dir' }))).toEqual(await store.list({ folder: 'dir' }));
+    expect(untag(await r.list({ ref: '@main/dir', depth: 1 }))).toEqual(
       await store.list({ folder: 'dir', depth: 1 })
     );
-    expect(await r.list({ tags: ['tag'] })).toEqual(await store.list({ tags: ['tag'] }));
+    expect(untag(await r.list({ ref: '@main', tags: ['tag'] }))).toEqual(
+      await store.list({ tags: ['tag'] })
+    );
     const first = await store.list({ limit: 2 });
-    expect(await r.list({ limit: 2 })).toEqual(first);
-    expect(await r.list({ limit: 2, cursor: first.nextCursor })).toEqual(
+    expect(untag(await r.list({ ref: '@main', limit: 2 }))).toEqual(first);
+    expect(untag(await r.list({ ref: '@main', limit: 2, cursor: first.nextCursor }))).toEqual(
       await store.list({ limit: 2, cursor: first.nextCursor })
     );
   });
 
-  it('search is identical, including the paging cursor', async () => {
-    expect(await r.search({ query: 'zebra' })).toEqual(await store.search({ query: 'zebra' }));
-    expect(await r.search({ query: 'nothinghere' })).toEqual(
+  it('search matches, including the paging cursor', async () => {
+    expect(untag(await r.search({ query: 'zebra', folder: '@main' }))).toEqual(
+      await store.search({ query: 'zebra' })
+    );
+    expect(untag(await r.search({ query: 'nothinghere', folder: '@main' }))).toEqual(
       await store.search({ query: 'nothinghere' })
     );
     const first = await store.search({ query: 'zebra', limit: 1 });
-    expect(await r.search({ query: 'zebra', limit: 1 })).toEqual(first);
-    expect(await r.search({ query: 'zebra', limit: 1, cursor: first.nextCursor })).toEqual(
-      await store.search({ query: 'zebra', limit: 1, cursor: first.nextCursor })
-    );
-    expect(await r.search({ query: 'zebra', folder: 'dir' })).toEqual(
+    expect(untag(await r.search({ query: 'zebra', folder: '@main', limit: 1 }))).toEqual(first);
+    expect(
+      untag(await r.search({ query: 'zebra', folder: '@main', limit: 1, cursor: first.nextCursor }))
+    ).toEqual(await store.search({ query: 'zebra', limit: 1, cursor: first.nextCursor }));
+    expect(untag(await r.search({ query: 'zebra', folder: '@main/dir' }))).toEqual(
       await store.search({ query: 'zebra', folder: 'dir' })
     );
   });
@@ -76,17 +83,9 @@ describe('router single-vault transparency', () => {
     const router = createRouter(big.container, big.access);
     const direct = await bigStore.search({ query: 'zebra', limit: 50 });
     expect(direct.nextCursor).toBeDefined();
-    expect(await router.search({ query: 'zebra', limit: 50 })).toEqual(direct);
-  });
-
-  it('accepts an explicit @vault ref for the one vault and still emits bare paths', async () => {
-    expect(await r.read('@main/a.md')).toEqual(await store.read('a.md'));
-    expect(await r.list({ ref: '@main/dir' })).toEqual(await store.list({ folder: 'dir' }));
-    expect(await r.search({ query: 'zebra', folder: '@main/dir' })).toEqual(
-      await store.search({ query: 'zebra', folder: 'dir' })
+    expect(untag(await router.search({ query: 'zebra', folder: '@main', limit: 50 }))).toEqual(
+      direct
     );
-    const written = await r.write('@main/tagged.md', { body: 'x' });
-    expect(written.path).toBe('tagged.md');
   });
 
   it('mutating verbs match a directly-driven store, results and events alike', async () => {
@@ -98,32 +97,35 @@ describe('router single-vault transparency', () => {
     oracle.subscribe((e) => seen.push(e));
     const author = { id: 'claude-desktop', name: 'Claude' };
 
-    expect(await r.write('n.md', { body: 'note' }, author)).toEqual(
+    expect(untag(await r.write('@main/n.md', { body: 'note' }, author))).toEqual(
       await oracle.write({ path: 'n.md', body: 'note' }, author)
     );
-    expect(await r.write('n.md', { body: 'note', frontmatter: { k: 1 } })).toEqual(
+    expect(untag(await r.write('@main/n.md', { body: 'note', frontmatter: { k: 1 } }))).toEqual(
       await oracle.write({ path: 'n.md', body: 'note', frontmatter: { k: 1 } })
     );
-    expect(await r.edit('n.md', { mode: 'append', body: 'more' }, author)).toEqual(
+    expect(untag(await r.edit('@main/n.md', { mode: 'append', body: 'more' }, author))).toEqual(
       await oracle.edit({ path: 'n.md', mode: 'append', body: 'more' }, author)
     );
-    expect(await r.edit('missing.md', { mode: 'append', body: 'x' })).toEqual(
+    expect(await r.edit('@main/missing.md', { mode: 'append', body: 'x' })).toEqual(
       await oracle.edit({ path: 'missing.md', mode: 'append', body: 'x' })
     );
-    expect(await r.delete('n.md')).toEqual(await oracle.delete('n.md'));
-    expect(await r.delete('n.md')).toEqual(await oracle.delete('n.md'));
-    expect(mine).toEqual(seen);
-    expect(await r.list({})).toEqual(await oracle.list({}));
+    expect(await r.delete('@main/n.md')).toEqual(await oracle.delete('n.md'));
+    expect(await r.delete('@main/n.md')).toEqual(await oracle.delete('n.md'));
+    expect(mine).toEqual(seen); // events carry in-vault paths, never the tag
+    expect(untag(await r.list({ ref: '@main' }))).toEqual(await oracle.list({}));
   });
 
-  it('emits no @ anywhere in a single-vault response', async () => {
-    await r.write('fresh.md', { body: 'zebra' });
-    const payload = JSON.stringify([
-      await r.read('fresh.md'),
-      await r.list({}),
-      await r.list({ ref: 'dir' }),
-      await r.search({ query: 'zebra' }),
+  it('tags every emitted path even when one vault is granted', async () => {
+    const written = await r.write('@main/fresh.md', { body: 'zebra' });
+    expect(written.path).toBe('@main/fresh.md');
+    expect((await r.read('@main/fresh.md'))?.path).toBe('@main/fresh.md');
+    expect((await r.list({ ref: '@main/dir' })).entries.map((e) => e.path)).toEqual([
+      '@main/dir/deep',
+      '@main/dir/b.md',
     ]);
-    expect(payload).not.toContain('@');
+    const hits = await r.search({ query: 'zebra' });
+    expect(hits.results.length).toBeGreaterThan(0);
+    expect(hits.results.every((h) => h.path.startsWith('@main/'))).toBe(true);
+    expect((await r.list({})).entries.map((e) => e.path)).toEqual(['@main']);
   });
 });
