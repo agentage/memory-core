@@ -1,13 +1,36 @@
-# @agentage/store-core
+# @agentage/memory-core
 
-The storage foundation for agentage Memory: one storage-agnostic **vault store contract** ("markdown docs addressed by path, opaquely versioned") plus swappable implementations. One instance = one vault. Multi-tenancy, auth, and protocol rendering live in the consumers - never here.
+The memory engine for agentage Memory: one storage-agnostic **vault store contract** ("markdown docs addressed by path, opaquely versioned"), swappable implementations, and the two layers above them - an `Access`-gated multi-vault container and an `@vault/path` router. One store instance = one vault. Auth, tenancy policy, and protocol rendering live in the consumers - never here.
+
+**`1.0.0` is a new engine under an existing name.** It replaces the `0.5.x` `@agentage/memory-core` line wholesale (different API, no upgrade path) and retires `@agentage/store-core`, the never-published name this repo grew up under.
 
 North star spec: `vaults/agentage/specs/north-star-store-core.md`.
+
+## Layers
+
+```text
+caller  (MCP tool layer, /v1 REST handlers, sync)
+  |     every ref is @vault/path
+  v
+Router      permission fail-fast: the ref's vault is checked against Access BEFORE any
+  |         container call; every path it emits comes back as @vault/path
+  v
+Container   Access-gated lifecycle over <root>/<userId>/<vault>.git - list/create/open/
+  |         remove; open never provisions; an ObjectCache holds one live store instance
+  |         per vault (LRU by object count, dispose on evict)
+  v
+VaultStore  the frozen contract - read/write/edit/delete/search/list/describe + events;
+  |         guards always on (path safety, restricted data, size caps, read clamp)
+  v
+bare git    one bare repo per vault - every write is a commit, `git grep` is the index
+```
+
+Each layer stands alone: a single-vault consumer can hold a `VaultStore` directly, the container works without the router, and the router is a pure binding cheap enough to rebuild per request.
 
 ## Install
 
 ```bash
-npm install @agentage/store-core
+npm install @agentage/memory-core
 ```
 
 MIT licensed, published to public npm. Requires **Node >=22**.
@@ -15,7 +38,7 @@ MIT licensed, published to public npm. Requires **Node >=22**.
 ## Quickstart
 
 ```ts
-import { createBareGitStore } from '@agentage/store-core';
+import { createBareGitStore } from '@agentage/memory-core';
 
 const store = createBareGitStore('/data/repos/alice01/main.git'); // one instance = one vault
 
@@ -43,7 +66,7 @@ store.subscribe((e) => console.log(e.type, e.paths, e.version)); // write | edit
 const externalEvents = await store.refresh();
 
 // derived data: computed views cached by policy, disposable by construction
-import { createDerivedCache, createStatsView } from '@agentage/store-core';
+import { createDerivedCache, createStatsView } from '@agentage/memory-core';
 const cache = createDerivedCache(store, '/data/repos/alice01/main.cache');
 const stats = await cache.get(createStatsView('/data/repos/alice01/main.git')); // { files, folders, sizeBytes }
 ```
@@ -51,7 +74,7 @@ const stats = await cache.get(createStatsView('/data/repos/alice01/main.git')); 
 ### Shared live objects
 
 ```ts
-import { ObjectCache } from '@agentage/store-core';
+import { ObjectCache } from '@agentage/memory-core';
 
 // build ONE per process - bounded by object COUNT (not bytes), LRU by last use
 const stores = new ObjectCache<VaultStore>({ max: 256, dispose: (s, key) => detach(s, key) });
@@ -69,7 +92,7 @@ import {
   ensureBareRepo,
   ObjectCache,
   type VaultStore,
-} from '@agentage/store-core';
+} from '@agentage/memory-core';
 
 const container = createVaultContainer({
   root: '/data/repos', // layout: <root>/<userId>/<vault>.git
@@ -90,7 +113,7 @@ await container.remove(access, 'work', stamp); // gated by canDelete -> <vault>.
 ### One addressable surface over those vaults (the router)
 
 ```ts
-import { createRouter } from '@agentage/store-core';
+import { createRouter } from '@agentage/memory-core';
 
 // pure binding - no IO here, so build one per request
 const router = createRouter(container, access);
@@ -111,7 +134,7 @@ Strip the tags off a response and what is left is byte-for-byte what calling the
 ### Swap the store, keep the contract
 
 ```ts
-import { createMemoryStore } from '@agentage/store-core';
+import { createMemoryStore } from '@agentage/memory-core';
 
 createMemoryStore(); // dev/test fixture - the reference implementation
 ```
@@ -121,7 +144,7 @@ createMemoryStore(); // dev/test fixture - the reference implementation
 | `createMemoryStore`  | tests/dev             | in-process scan (reference impl) |
 | `createBareGitStore` | server (multi-tenant) | `git grep` HEAD                  |
 
-Both pass the same conformance kit, so a consumer written against one runs unchanged on the other. Stores for other worlds (local working copy, FTS-indexed, HTTP client/server) are out of scope for now - they lived here through `v0.1.0` and are recoverable from git history.
+Both pass the same conformance kit, so a consumer written against one runs unchanged on the other. Stores for other worlds (local working copy, FTS-indexed, HTTP client/server) are out of scope for now - they were cut before `1.0.0` and are recoverable from git history.
 
 ## Consumer templates (start here when integrating)
 
@@ -135,7 +158,7 @@ Every implementation must pass the shared kit - a store that passes is guarantee
 
 ```ts
 // vitest is an optional peer dependency - run the kit inside your own suite
-import { contractSuite, securitySuite, HOSTILE_PATHS } from '@agentage/store-core/conformance';
+import { contractSuite, securitySuite, HOSTILE_PATHS } from '@agentage/memory-core/conformance';
 
 contractSuite({ name: 'my-store', make: () => createMyStore() });
 securitySuite({ name: 'my-store', make: () => createMyStore() });
@@ -159,5 +182,5 @@ CI tiers: **PR** = full verify incl. perf @1000 notes (merge-blocking, `verify` 
 
 ```bash
 npm install
-npm run verify   # type-check + lint + format:check + test + build
+npm run verify   # type-check + lint + format:check + coverage + build + dist smoke
 ```
