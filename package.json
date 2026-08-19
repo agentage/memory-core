@@ -1,7 +1,7 @@
 {
-  "name": "@agentage/store-core",
-  "version": "0.1.0",
-  "description": "Storage-agnostic vault store contract + implementations for agentage Memory",
+  "name": "@agentage/memory-core",
+  "version": "1.0.0",
+  "description": "The memory engine for agentage: vault store contract, stores, container, router",
   "type": "module",
   "license": "MIT",
   "repository": {

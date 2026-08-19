@@ -81,7 +81,7 @@ beforeAll(async () => {
 
 afterAll(() => {
   const table = [
-    `### store-core non-functional proof (scale: ${SCALE} notes)`,
+    `### memory-core non-functional proof (scale: ${SCALE} notes)`,
     '',
     '| metric | measured | budget | ok |',
     '|---|---|---|---|',

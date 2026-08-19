@@ -1,4 +1,4 @@
-// @agentage/store-core - storage-agnostic vault store contract + implementations.
+// @agentage/memory-core - vault store contract, stores, container, router.
 
 export type {
   EditInput,

@@ -8,7 +8,7 @@ on:
 
 permissions:
   contents: read
-  packages: write
+  id-token: write
 
 jobs:
   publish:
@@ -19,29 +19,35 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          registry-url: https://npm.pkg.github.com
+          registry-url: https://registry.npmjs.org
       - run: npm ci
+      - name: Preflight - provenance needs a public repo, publish needs a token
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          [ "${{ github.event.repository.private }}" = "false" ] || {
+            echo "::error::npm rejects --provenance from a private repo - make this repo public first"
+            exit 1
+          }
+          [ -n "$NPM_TOKEN" ] || { echo "::error::NPM_TOKEN secret is missing"; exit 1; }
       - name: Skip if this version is already published
         id: gate
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          VERSION=$(node -p "require('./package.json').version")
-          if npm view "@agentage/store-core@${VERSION}" version >/dev/null 2>&1; then
+          SPEC="$(node -p "const p=require('./package.json');p.name+'@'+p.version")"
+          echo "spec=${SPEC}" >> "$GITHUB_OUTPUT"
+          if npm view "${SPEC}" version >/dev/null 2>&1; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "@agentage/store-core@${VERSION} already published - skipping"
+            echo "${SPEC} already published - skipping"
           else
             echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
-      - name: Publish to GitHub Packages
+      - name: Publish to npm
         if: steps.gate.outputs.exists == 'false'
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        # A concurrent run (dispatch + push double-fire) can win the race after our
-        # gate check; if the version exists afterwards, that IS success.
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        # A concurrent run (dispatch + push double-fire) can win the race after the gate; that IS success.
         run: |
-          if ! npm publish; then
-            VERSION=$(node -p "require('./package.json').version")
-            npm view "@agentage/store-core@${VERSION}" version >/dev/null 2>&1 \
+          if ! npm publish --access public --provenance; then
+            npm view "${{ steps.gate.outputs.spec }}" version >/dev/null 2>&1 \
               && echo "published by a concurrent run - ok" || exit 1
           fi
