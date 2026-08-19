@@ -87,6 +87,24 @@ await container.remove(access, 'work', stamp); // gated by canDelete -> <vault>.
 
 `Access` (`{ userId, vaults: Set | '*', canCreate, canDelete }`) is the only authority the container reads: the host decides who may touch which vault - `ResolveAccess` is a **type** here, policy never enters the engine - and the container enforces that decision against storage facts. It never reads the clock (deletion stamps are supplied by the caller), never provisions on a read path, and never configures the cache: the composition root builds the `ObjectCache` with its own `dispose`, because whoever creates subscriptions owns tearing them down. Refusals are coded: `invalid_path` (hostile id or stamp), `forbidden` (outside the grant, or missing canCreate/canDelete), `unknown_vault` (not provisioned).
 
+### One addressable surface over those vaults (the router)
+
+```ts
+import { createRouter } from '@agentage/store-core';
+
+// pure binding - no IO here, so build one per request
+const router = createRouter(container, access, { defaultVault: 'main' });
+
+await router.read('inbox/idea.md'); // plain ref -> the default vault
+await router.write('@work/plan.md', { body: 'ship it' }, client); // @vault/ -> that vault
+await router.search({ query: 'zebra' }); // fans out across every granted vault, merged + re-paged
+await router.list({}); // no ref: each vault as a top-level @folder
+```
+
+A ref is `path` (the default vault) or `@vault/path`. **One granted vault = the router is invisible**: no prefix is required going in, none is emitted coming out, and every verb returns exactly what the store returns - same values, same cursors. From two vaults on, returned paths are re-tagged `@vault/…` so everything the caller sees is addressable again, and `search` merges the per-vault pages into the contract's total order (score desc, recency desc, path asc) before re-paging.
+
+The router adds addressing and nothing else: guards and paging stay in the store, access stays in the container, and refusals pass through with their codes (`forbidden` outside the grant, `restricted`/`invalid_path` from the store). The one refusal it owns is `unknown_vault` for a granted-but-unprovisioned `@vault` - its message text is a frozen client contract, exported as `unknownVaultMessage`.
+
 ### Swap the store, keep the contract
 
 ```ts

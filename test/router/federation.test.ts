@@ -79,6 +79,14 @@ describe('router federation (>1 vault)', () => {
     ]);
   });
 
+  it('lists the vaults alone at depth 1', async () => {
+    const res = await r.list({ depth: 1 });
+    expect(res.entries).toEqual([
+      { type: 'folder', path: '@main', files: 1, entries: undefined },
+      { type: 'folder', path: '@work', files: 2, entries: undefined },
+    ]);
+  });
+
   it('prefixes list entries under an @vault folder and under the default vault', async () => {
     const scoped = await r.list({ ref: '@work/dir' });
     expect(scoped.folder).toBe('@work/dir');
