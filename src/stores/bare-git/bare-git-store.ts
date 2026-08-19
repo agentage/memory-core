@@ -241,7 +241,7 @@ export const createBareGitStore = (repoDir: string, opts: BareGitStoreOptions = 
       await detectDrift();
       const version = await git.readVersion();
       if (!version) return none;
-      const { files, folders, sizeBytes } = await computeVaultStats(repoDir, version);
+      const { files, folders, sizeBytes } = await computeVaultStats(git, version);
       const at = await git.tryRun(['log', '-1', '--format=%cI', version]);
       return { files, folders, sizeBytes, updated: at?.trim() || null, version };
     },

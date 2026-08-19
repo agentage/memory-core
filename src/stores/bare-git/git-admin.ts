@@ -2,10 +2,10 @@
 // vaults belong to whom" is host policy - the host loops its own layout over
 // these per-repo operations. All destructive ops are containment-checked.
 
-import { execFile } from 'node:child_process';
 import { readdir, rm, stat, unlink, writeFile } from 'node:fs/promises';
 import { join, resolve, sep } from 'node:path';
 import { StoreError } from '../../contract/errors.js';
+import { createGitRunner } from './git-run.js';
 
 // Immediate child bare repos (<dir>/<name>.git) - one level, host recurses per
 // its own layout if it nests (e.g. root/<tenant>/<vault>.git).
@@ -22,20 +22,15 @@ export const listVaultDirs = async (dir: string): Promise<string[]> => {
 };
 
 // A clone-able bundle of the whole vault (history included) - the export path.
-export const bundleRepo = (repoDir: string): Promise<Buffer | null> =>
-  new Promise((resolvePromise, reject) => {
-    execFile(
-      'git',
-      ['bundle', 'create', '-', '--all'],
-      {
-        env: { ...process.env, GIT_DIR: repoDir },
-        encoding: 'buffer',
-        maxBuffer: 256 * 1024 * 1024,
-      },
-      (err, stdout) => (err ? resolvePromise(null) : resolvePromise(stdout as unknown as Buffer))
-    );
-    void reject;
-  });
+export const bundleRepo = async (repoDir: string): Promise<Buffer | null> => {
+  try {
+    return await createGitRunner(repoDir).runBuffer(['bundle', 'create', '-', '--all'], {
+      maxBufferBytes: 256 * 1024 * 1024,
+    });
+  } catch {
+    return null; // nothing to bundle (empty or missing repo)
+  }
+};
 
 // Delete one repo (or sidecar dir). Refuses anything not strictly inside
 // `within` - the host can never be tricked into deleting outside its root.

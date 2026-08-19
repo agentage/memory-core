@@ -32,6 +32,8 @@ await store.describe(); // { files, folders, sizeBytes, updated, version } - the
 
 Every write is a git commit with client attribution; guards are always on (path safety incl. `.git`/`.agentage` reservation, secrets/PII refusal, 8MB doc cap, 64KB read clamp).
 
+The engine is hermetic: every git spawn gets a minimal explicit environment (`PATH` only, no `HOME`, global+system gitconfig voided), so a host's `~/.gitconfig` - identity, `core.autocrlf`, `core.hooksPath`, proxies - can never change engine behavior. Commit identity comes from the call, not the machine.
+
 ### Events, out-of-band changes, derived data
 
 ```ts
