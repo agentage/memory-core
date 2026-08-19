@@ -12,7 +12,14 @@ export default defineConfig({
       provider: 'v8',
       // conformance/ is a shipped public export, not scaffolding, so it is measured too.
       include: ['src/**/*.ts'],
-      thresholds: { branches: 70, functions: 70, lines: 70, statements: 70 },
+      thresholds: {
+        branches: 70,
+        functions: 70,
+        lines: 70,
+        statements: 70,
+        // Tiny, pure, shared-by-everything: cache code is held to a higher bar.
+        'src/cache/**': { branches: 90, functions: 90, lines: 90, statements: 90 },
+      },
     },
   },
 });

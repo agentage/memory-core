@@ -103,3 +103,4 @@ export {
   type DerivedCache,
   type DerivedView,
 } from './contract/derived.js';
+export { ObjectCache, type ObjectCacheOptions } from './cache/object-cache.js';

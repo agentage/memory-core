@@ -48,6 +48,18 @@ const cache = createDerivedCache(store, '/data/repos/alice01/main.cache');
 const stats = await cache.get(createStatsView('/data/repos/alice01/main.git')); // { files, folders, sizeBytes }
 ```
 
+### Shared live objects
+
+```ts
+import { ObjectCache } from '@agentage/store-core';
+
+// build ONE per process - bounded by object COUNT (not bytes), LRU by last use
+const stores = new ObjectCache<VaultStore>({ max: 256, dispose: (s, key) => detach(s, key) });
+stores.get(key, () => createBareGitStore(pathFor(key))); // same key = same instance
+```
+
+Type-agnostic by construction (it never imports an engine type), so the same class caches stores, parsed configs, watchers - anything rebuildable. `dispose` is best-effort cleanup on eviction/`delete`, never a correctness hook.
+
 ### Swap the store, keep the contract
 
 ```ts

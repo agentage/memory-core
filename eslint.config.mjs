@@ -15,5 +15,22 @@ export default tseslint.config(
       '@typescript-eslint/no-explicit-any': 'error',
       '@typescript-eslint/consistent-type-imports': 'error',
     },
+  },
+  {
+    // src/cache stays type-agnostic: it caches opaque objects, never engine types.
+    files: ['src/cache/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['../*', '../**', '**/contract/**', '**/stores/**'],
+              message: 'src/cache is type-agnostic - no imports from contract/ or stores/.',
+            },
+          ],
+        },
+      ],
+    },
   }
 );
