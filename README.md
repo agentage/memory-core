@@ -87,6 +87,27 @@ await container.remove(access, 'work', stamp); // gated by canDelete -> <vault>.
 
 `Access` (`{ userId, vaults: Set | '*', canCreate, canDelete }`) is the only authority the container reads: the host decides who may touch which vault - `ResolveAccess` is a **type** here, policy never enters the engine - and the container enforces that decision against storage facts. It never reads the clock (deletion stamps are supplied by the caller), never provisions on a read path, and never configures the cache: the composition root builds the `ObjectCache` with its own `dispose`, because whoever creates subscriptions owns tearing them down. Refusals are coded: `invalid_path` (hostile id or stamp), `forbidden` (outside the grant, or missing canCreate/canDelete), `unknown_vault` (not provisioned).
 
+### One addressable surface over those vaults (the router)
+
+```ts
+import { createRouter } from '@agentage/store-core';
+
+// pure binding - no IO here, so build one per request
+const router = createRouter(container, access);
+
+await router.read('@main/inbox/idea.md'); // every ref is @vault/path
+await router.write('@work/plan.md', { body: 'ship it' }, client);
+await router.search({ query: 'zebra' }); // no folder: fans out across every granted vault
+await router.list({}); // no ref: each vault as a top-level @folder
+await router.list({ ref: '@work/dir' }); // list and search may scope to @vault or @vault/folder
+```
+
+**One input rule:** a ref is always `@vault/path`. Anything without the prefix is `invalid_path` - there is no default vault and no single-vault special case, so a caller that wants a default resolves it itself. **One output rule:** every path the router emits - `view.path`, write/edit results, search hits, list entries and folders - comes back as `@vault/path`, so every output round-trips as an input. The two unscoped shapes are the discovery ones: `list({})` is the vault directory, `search({ query })` fans out across every granted vault and merges the per-vault pages into the contract's total order (score desc, recency desc, path asc) before re-paging.
+
+**Router = permission check + routing to the corresponding vault instance. No default vault.** It is the responsible layer for permission: the ref's vault is checked against `Access` BEFORE any container call, so an ungranted vault is refused with `forbidden` and zero container interaction (the container's own gate stays the last line of defense). Everything else stays where it belongs - guards, ranking and paging in the store, provisioning in the container - and their refusals pass through untouched (`restricted`, `invalid_path`, `unavailable`). The one refusal the router owns is `unknown_vault` for a granted-but-unprovisioned `@vault`: its message text is a frozen client contract, exported as `unknownVaultMessage`.
+
+Strip the tags off a response and what is left is byte-for-byte what calling the store directly returns - same values, same cursors, same events.
+
 ### Swap the store, keep the contract
 
 ```ts

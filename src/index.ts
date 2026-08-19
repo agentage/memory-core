@@ -75,6 +75,7 @@ export {
   type VaultContainer,
   type VaultContainerOptions,
 } from './container/vault-container.js';
+export { createRouter, unknownVaultMessage, type Router } from './router/router.js';
 export {
   bundleRepo,
   checkRootWritable,

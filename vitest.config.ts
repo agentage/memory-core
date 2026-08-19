@@ -21,6 +21,8 @@ export default defineConfig({
         'src/cache/**': { branches: 90, functions: 90, lines: 90, statements: 90 },
         // The container is the tenancy boundary - every gate must be exercised.
         'src/container/**': { branches: 85, functions: 85, lines: 85, statements: 85 },
+        // The router decides which vault a ref reaches - same bar as the container.
+        'src/router/**': { branches: 85, functions: 85, lines: 85, statements: 85 },
       },
     },
   },
