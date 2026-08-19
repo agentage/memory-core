@@ -6,7 +6,12 @@
 
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { MAX_SEARCH_LIMIT, type SeedFile, type SearchResult } from '../../src/index.js';
+import {
+  MAX_SEARCH_LIMIT,
+  type SeedFile,
+  type SearchResult,
+  type VaultContainer,
+} from '../../src/index.js';
 import { createRouter, type Router } from '../../src/router/router.js';
 import { world } from './harness.js';
 
@@ -21,7 +26,16 @@ interface Doc {
   stamp: string;
 }
 
-const build = async (docs: Doc[], defaultVault = 'alpha'): Promise<Router> => {
+// A container that lists the same vaults in the opposite order. The merged order
+// must not depend on it - without the path tiebreak a full tie would follow the
+// fan-out order instead, and this is the only fixture that can see the difference.
+const reverseList = (c: VaultContainer): VaultContainer => ({
+  ...c,
+  list: async (a) => (await c.list(a)).reverse(),
+});
+
+// Both routers share the same stores; only the order their vaults arrive in differs.
+const build = async (docs: Doc[]): Promise<{ forward: Router; reversed: Router }> => {
   const seeds: Record<string, SeedFile[]> = { alpha: [], beta: [], gamma: [] };
   const clocks: Record<string, string[]> = { alpha: [], beta: [], gamma: [] };
   for (const d of [...docs].sort((a, b) => a.name.localeCompare(b.name))) {
@@ -29,7 +43,11 @@ const build = async (docs: Doc[], defaultVault = 'alpha'): Promise<Router> => {
     clocks[d.vault]?.push(d.stamp);
   }
   const w = await world(seeds, { over: { vaults: new Set(VAULTS) }, clocks });
-  return createRouter(w.container, w.access, { defaultVault });
+  const opts = { defaultVault: 'alpha' };
+  return {
+    forward: createRouter(w.container, w.access, opts),
+    reversed: createRouter(reverseList(w.container), w.access, opts),
+  };
 };
 
 // The oracle: the contract's total order over the union, on the tagged paths.
@@ -68,9 +86,11 @@ describe('router federated search', () => {
       fc.asyncProperty(
         fc.uniqueArray(docArb, { selector: (d) => `${d.vault}/${d.name}`, maxLength: 12 }),
         async (docs) => {
-          const r = await build(docs);
-          const res = await r.search({ query: 'zz', limit: MAX_SEARCH_LIMIT });
-          expect(res.results.map((h) => h.path)).toEqual(expected(docs));
+          const { forward, reversed } = await build(docs);
+          for (const r of [forward, reversed]) {
+            const res = await r.search({ query: 'zz', limit: MAX_SEARCH_LIMIT });
+            expect(res.results.map((h) => h.path)).toEqual(expected(docs));
+          }
         }
       ),
       { numRuns: Math.max(5, Math.round(RUNS)) }
@@ -83,8 +103,9 @@ describe('router federated search', () => {
         fc.uniqueArray(docArb, { selector: (d) => `${d.vault}/${d.name}`, maxLength: 12 }),
         fc.integer({ min: 1, max: 4 }),
         async (docs, limit) => {
-          const r = await build(docs);
-          expect(await drain(r, limit)).toEqual(expected(docs));
+          const { forward, reversed } = await build(docs);
+          expect(await drain(forward, limit)).toEqual(expected(docs));
+          expect(await drain(reversed, limit)).toEqual(expected(docs));
         }
       ),
       { numRuns: Math.max(5, Math.round(RUNS)) }
@@ -99,7 +120,7 @@ describe('router federated search', () => {
       { vault: 'alpha', name: 'd', hits: 2, stamp: STAMPS[0]! },
       { vault: 'beta', name: 'e', hits: 1, stamp: STAMPS[2]! },
     ];
-    const r = await build(docs);
+    const { forward: r } = await build(docs);
     const all = await r.search({ query: 'zz', limit: 50 });
     const paths = all.results.map((h) => h.path);
     expect(paths).toEqual(expected(docs));
@@ -119,7 +140,7 @@ describe('router federated search', () => {
     const docs: Doc[] = VAULTS.flatMap((vault) =>
       ['a', 'b', 'c'].map((name) => ({ vault, name, hits: 2, stamp: STAMPS[0]! }))
     );
-    const r = await build(docs);
+    const { forward: r } = await build(docs);
     const runs = await Promise.all(
       Array.from({ length: 5 }, () => r.search({ query: 'zz', limit: 50 }))
     );
@@ -134,7 +155,7 @@ describe('router federated search', () => {
         hits: 1,
         stamp: STAMPS[0]!,
       }));
-    const r = await build([...many('alpha'), ...many('beta')]);
+    const { forward: r } = await build([...many('alpha'), ...many('beta')]);
     const capped = await r.search({ query: 'zz', limit: 999 });
     expect(capped.results).toHaveLength(MAX_SEARCH_LIMIT);
     expect(capped.nextCursor).toBeDefined();
