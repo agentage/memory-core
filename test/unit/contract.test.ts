@@ -25,6 +25,30 @@ describe('parseMemoryId', () => {
     expect(parseMemoryId('user123')).toEqual({ userId: 'user123', vault: 'default' });
   });
 
+  it('accepts a real Better Auth id and every <user>/<vault> shape, rejects the rest', () => {
+    const sub = 'knK7ALkomaSIel7R9jekdqKelAAbARDX'; // Better Auth user id = [A-Za-z0-9]{32}
+    expect(parseMemoryId(sub)).toEqual({ userId: sub, vault: 'default' });
+    expect(parseMemoryId(`${sub}/work`)).toEqual({ userId: sub, vault: 'work' });
+    // Each segment is allowlisted: >2 segments, traversal, dots, control-ish
+    // charsets, over-length and empties are all refused.
+    for (const bad of [
+      'has space',
+      'a/b/c',
+      '../evil',
+      'a/..',
+      'a/',
+      '/b',
+      'a..b',
+      'a.b',
+      'a;b',
+      'café',
+      'x'.repeat(65),
+      '',
+    ]) {
+      expect(() => parseMemoryId(bad)).toThrow(/memoryId/);
+    }
+  });
+
   it('rejects extra segments and unsafe charsets', () => {
     expect(() => parseMemoryId('a/b/c')).toThrow();
     expect(() => parseMemoryId('../x')).toThrow();

@@ -76,8 +76,12 @@ export {
 export {
   bundleRepo,
   checkRootWritable,
+  deleteUser,
+  deleteVault,
   destroyRepo,
   listVaultDirs,
+  listVaults,
+  vaultExists,
 } from './stores/bare-git/git-admin.js';
 export {
   countOccurrences,
