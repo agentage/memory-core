@@ -2,7 +2,7 @@
 // must never do (provision on a read path), plus the live-object contract it
 // borrows from the composition root's cache.
 
-import { readdir } from 'node:fs/promises';
+import { chmod, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { createMemoryStore, ObjectCache, type VaultStore } from '../../src/index.js';
@@ -133,5 +133,36 @@ describe('container lifecycle', () => {
     await container.remove(a, 'one', 's1'); // dispose detaches the tap
     await one.write({ path: 'c.md', body: 'z' });
     expect(seen).toHaveLength(3);
+  });
+});
+
+describe('container infrastructure failures never read as absence', () => {
+  it('an unreadable user dir is unavailable, not an empty vault list', async () => {
+    const root = await makeRoot();
+    const container = containerAt(root);
+    const a = access({ vaults: '*' });
+    const live = await container.create(a, 'main');
+    await chmod(join(root, 'alice01'), 0o000);
+    try {
+      await expect(container.list(a)).rejects.toMatchObject({ code: 'unavailable' });
+      await expect(container.open(a, 'other')).rejects.toMatchObject({ code: 'unavailable' });
+      await expect(container.create(a, 'main')).rejects.toMatchObject({ code: 'unavailable' });
+      expect(await container.open(a, 'main')).toBe(live); // a cache hit needs no IO at all
+      await expect(container.remove(a, 'main', 's1')).rejects.toMatchObject({
+        code: 'unavailable',
+      });
+    } finally {
+      await chmod(join(root, 'alice01'), 0o755);
+    }
+  });
+
+  it('a tombstone rename that cannot complete is unavailable, not a silent false', async () => {
+    const root = await makeRoot();
+    const container = containerAt(root);
+    const a = access({ vaults: '*' });
+    await container.create(a, 'main');
+    await mkdirp(join(root, 'alice01', 'main.deleted-s1.git', 'occupied'));
+    await expect(container.remove(a, 'main', 's1')).rejects.toMatchObject({ code: 'unavailable' });
+    expect(await container.list(a)).toEqual(['main']); // still there - nothing was lost
   });
 });

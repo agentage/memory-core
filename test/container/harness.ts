@@ -76,7 +76,8 @@ export const HOSTILE_IDS: string[] = [
     'tab\tid',
     'null\u0000byte',
     'main;rm -rf /',
-    '-',
     '--upload-pack=x',
+    '.hidden',
+    'main.git.deleted',
   ]),
 ];

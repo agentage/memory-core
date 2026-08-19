@@ -26,6 +26,11 @@ export class ObjectCache<T> {
     return this.#live.size;
   }
 
+  // Peek for callers that must fall back to IO on a miss - never touches LRU order.
+  has(key: string): boolean {
+    return this.#live.has(key);
+  }
+
   get(key: string, create: () => T): T {
     if (this.#live.has(key)) {
       const hit = this.#live.get(key) as T;
