@@ -1,4 +1,7 @@
 {
   "extends": "./tsconfig.json",
-  "include": ["src"]
+  // TS6 requires rootDir to be explicit; the main config keeps it unset so it can type-check test/.
+  "compilerOptions": { "rootDir": "src", "sourceMap": false, "declarationMap": false },
+  "include": ["src"],
+  "exclude": ["node_modules", "dist", "coverage", "src/**/*.test.ts"]
 }
