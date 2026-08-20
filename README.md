@@ -1,10 +1,91 @@
 # @agentage/memory-core
 
-The memory engine for agentage Memory: one storage-agnostic **vault store contract** ("markdown docs addressed by path, opaquely versioned"), swappable implementations, and the two layers above them - an `Access`-gated multi-vault container and an `@vault/path` router. One store instance = one vault. Auth, tenancy policy, and protocol rendering live in the consumers - never here.
+[![npm](https://img.shields.io/npm/v/@agentage/memory-core.svg)](https://www.npmjs.com/package/@agentage/memory-core)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+[![CI](https://img.shields.io/github/actions/workflow/status/agentage/memory-core/ci.yml?branch=master&label=CI)](https://github.com/agentage/memory-core/actions/workflows/ci.yml)
+[![Node](https://img.shields.io/badge/node-%3E%3D22-3c873a.svg)](https://nodejs.org)
+[![agentage.io](https://img.shields.io/badge/by-agentage.io-e0a234.svg)](https://agentage.io)
 
-**`1.0.0` is a new engine under an existing name.** It replaces the `0.5.x` `@agentage/memory-core` line wholesale (different API, no upgrade path) and retires `@agentage/store-core`, the never-published name this repo grew up under.
+Give your AI a memory it can read, write and search - stored as plain markdown files you own.
 
-North star spec: `vaults/agentage/specs/north-star-store-core.md`.
+## What is this?
+
+AI apps forget everything between chats. [agentage Memory](https://agentage.io) fixes that with
+**one markdown memory every AI can read and write** - Claude, Cursor, ChatGPT - kept as ordinary
+`.md` files in a git repository you can clone, grep and export at any time.
+
+This package is the engine underneath. It turns a folder of markdown into a small, boring API -
+`read`, `write`, `edit`, `delete`, `search`, `list` - with the awkward parts already solved: path
+safety, secret refusal, size caps, snippets and ranking, cursor paging, change events, and a
+version token that only moves when content moves. Every write is a git commit, so nothing is ever
+silently lost.
+
+Use it when you are building the thing that talks to a memory rather than using one:
+
+- an **MCP server** - [`@agentage/server-memory`](https://github.com/agentage/server-memory) is
+  exactly this engine behind the frozen 6 `memory__*` tools
+- an **agent or app** that needs durable, greppable notes instead of a vector blob
+- a **multi-tenant service** - the container and router layers add per-user vault isolation
+
+Want the product, not the library? Start at [agentage.io](https://agentage.io).
+
+## Install
+
+```bash
+npm install @agentage/memory-core
+```
+
+MIT licensed, published to public npm. Requires **Node >=22** and `git` on `PATH` for the git store.
+
+## Quickstart
+
+```ts
+import { createBareGitStore } from '@agentage/memory-core';
+
+const store = createBareGitStore('/data/repos/alice01/main.git'); // one instance = one vault
+
+await store.write(
+  { path: 'inbox/idea.md', body: 'A quiet zebra #inbox' },
+  { id: 'claude-desktop', name: 'Claude' }
+);
+const hits = await store.search({ query: 'zebra', limit: 10 }); // { results: [{ path, title, snippet, score, updated }], nextCursor? }
+const view = await store.read('inbox/idea.md'); // MemoryView | null - { path, title, frontmatter, body, tags, updated, deleted, sizeBytes? }
+await store.edit({ path: 'inbox/idea.md', mode: 'str_replace', old_str: 'quiet', new_str: 'loud' });
+await store.delete('inbox/idea.md'); // recoverable - git history keeps it
+await store.describe(); // { files, folders, sizeBytes, updated, version } - the vault card
+```
+
+Every write is a git commit with client attribution; guards are always on (path safety incl.
+`.git`/`.agentage` reservation, secrets/PII refusal, 8MB doc cap, 64KB read clamp).
+
+The engine is hermetic: every git spawn gets a minimal explicit environment (`PATH` only, no
+`HOME`, global+system gitconfig voided), so a host's `~/.gitconfig` - identity, `core.autocrlf`,
+`core.hooksPath`, proxies - can never change engine behavior. Commit identity comes from the call,
+not the machine.
+
+## The contract
+
+`VaultStore` is the whole surface. One instance = one vault; every store implements the same shape,
+so a consumer written against one runs unchanged on another.
+
+| Verb                    | Returns               | What it does                                                              |
+| ----------------------- | --------------------- | ------------------------------------------------------------------------- |
+| `read(path, opts?)`     | `MemoryView \| null`  | One doc: body, frontmatter, tags, title. Clamped to 64KB unless opted out |
+| `write(input, author?)` | `WriteResult`         | Create or replace a doc; one git commit, attributed to the client         |
+| `edit(input, author?)`  | `WriteResult \| null` | `replace` / `append` / `str_replace` on an existing doc; `null` = absent  |
+| `delete(path)`          | `boolean`             | Remove a doc; recoverable from history. `false` = it was not there        |
+| `search(query)`         | `SearchResult`        | Ranked hits with snippets, `{ results, nextCursor? }`, cap 50 per page    |
+| `list(query)`           | `ListResult`          | Bounded folder tree with truncation + cursor paging                       |
+| `refresh()`             | `StoreEvent[]`        | Pick up out-of-band changes (a `git push`, a human edit) as events        |
+| `subscribe(observer)`   | `() => void`          | Fire-and-forget change events; returns the unsubscribe                    |
+| `describe()`            | `VaultDescription`    | Cheap vault card: `{ files, folders, sizeBytes, updated, version }`       |
+| `version()`             | `string \| null`      | Opaque change token; changes iff content changed, `null` = empty vault    |
+| `capabilities()`        | `StoreCapabilities`   | What this store can do: mutable, versioned, externallyMutable, search     |
+
+Guards are part of the contract, not of one implementation: refusals come back as a `StoreError`
+with a stable code - `invalid_path`, `restricted`, `unknown_vault`, `forbidden`, `unavailable`.
+A `null` / `[]` / `false` answer always means definitively-not-found; infrastructure failure throws
+`unavailable` instead of a degraded answer.
 
 ## Layers
 
@@ -25,37 +106,8 @@ VaultStore  the frozen contract - read/write/edit/delete/search/list/describe + 
 bare git    one bare repo per vault - every write is a commit, `git grep` is the index
 ```
 
-Each layer stands alone: a single-vault consumer can hold a `VaultStore` directly, the container works without the router, and the router is a pure binding cheap enough to rebuild per request.
-
-## Install
-
-```bash
-npm install @agentage/memory-core
-```
-
-MIT licensed, published to public npm. Requires **Node >=22**.
-
-## Quickstart
-
-```ts
-import { createBareGitStore } from '@agentage/memory-core';
-
-const store = createBareGitStore('/data/repos/alice01/main.git'); // one instance = one vault
-
-await store.write(
-  { path: 'inbox/idea.md', body: 'A quiet zebra #inbox' },
-  { id: 'claude-desktop', name: 'Claude' }
-);
-const hits = await store.search({ query: 'zebra', limit: 10 }); // [{ path, title, snippet, score, updated }]
-const view = await store.read('inbox/idea.md'); // { body, frontmatter, tags, title, updated }
-await store.edit({ path: 'inbox/idea.md', mode: 'str_replace', old_str: 'quiet', new_str: 'loud' });
-await store.delete('inbox/idea.md'); // recoverable - git history keeps it
-await store.describe(); // { files, folders, sizeBytes, updated, version } - the vault card
-```
-
-Every write is a git commit with client attribution; guards are always on (path safety incl. `.git`/`.agentage` reservation, secrets/PII refusal, 8MB doc cap, 64KB read clamp).
-
-The engine is hermetic: every git spawn gets a minimal explicit environment (`PATH` only, no `HOME`, global+system gitconfig voided), so a host's `~/.gitconfig` - identity, `core.autocrlf`, `core.hooksPath`, proxies - can never change engine behavior. Commit identity comes from the call, not the machine.
+Each layer stands alone: a single-vault consumer can hold a `VaultStore` directly, the container
+works without the router, and the router is a pure binding cheap enough to rebuild per request.
 
 ### Events, out-of-band changes, derived data
 
@@ -74,14 +126,16 @@ const stats = await cache.get(createStatsView('/data/repos/alice01/main.git')); 
 ### Shared live objects
 
 ```ts
-import { ObjectCache } from '@agentage/memory-core';
+import { ObjectCache, type VaultStore } from '@agentage/memory-core';
 
 // build ONE per process - bounded by object COUNT (not bytes), LRU by last use
 const stores = new ObjectCache<VaultStore>({ max: 256, dispose: (s, key) => detach(s, key) });
 stores.get(key, () => createBareGitStore(pathFor(key))); // same key = same instance
 ```
 
-Type-agnostic by construction (it never imports an engine type), so the same class caches stores, parsed configs, watchers - anything rebuildable. `dispose` is best-effort cleanup on eviction/`delete`, never a correctness hook.
+Type-agnostic by construction (it never imports an engine type), so the same class caches stores,
+parsed configs, watchers - anything rebuildable. `dispose` is best-effort cleanup on
+eviction/`delete`, never a correctness hook.
 
 ### Many vaults, one root (the server shape)
 
@@ -108,7 +162,14 @@ await container.open(access, 'work'); // NEVER provisions - unknown_vault if abs
 await container.remove(access, 'work', stamp); // gated by canDelete -> <vault>.deleted-<stamp>.git
 ```
 
-`Access` (`{ userId, vaults: Set | '*', canCreate, canDelete }`) is the only authority the container reads: the host decides who may touch which vault - `ResolveAccess` is a **type** here, policy never enters the engine - and the container enforces that decision against storage facts. It never reads the clock (deletion stamps are supplied by the caller), never provisions on a read path, and never configures the cache: the composition root builds the `ObjectCache` with its own `dispose`, because whoever creates subscriptions owns tearing them down. Refusals are coded: `invalid_path` (hostile id or stamp), `forbidden` (outside the grant, or missing canCreate/canDelete), `unknown_vault` (not provisioned).
+`Access` (`{ userId, vaults: Set | '*', canCreate, canDelete }`) is the only authority the container
+reads: the host decides who may touch which vault - `ResolveAccess` is a **type** here, policy never
+enters the engine - and the container enforces that decision against storage facts. It never reads
+the clock (deletion stamps are supplied by the caller), never provisions on a read path, and never
+configures the cache: the composition root builds the `ObjectCache` with its own `dispose`, because
+whoever creates subscriptions owns tearing them down. Refusals are coded: `invalid_path` (hostile id
+or stamp), `forbidden` (outside the grant, or missing canCreate/canDelete), `unknown_vault` (not
+provisioned).
 
 ### One addressable surface over those vaults (the router)
 
@@ -125,11 +186,25 @@ await router.list({}); // no ref: each vault as a top-level @folder
 await router.list({ ref: '@work/dir' }); // list and search may scope to @vault or @vault/folder
 ```
 
-**One input rule:** a ref is always `@vault/path`. Anything without the prefix is `invalid_path` - there is no default vault and no single-vault special case, so a caller that wants a default resolves it itself. **One output rule:** every path the router emits - `view.path`, write/edit results, search hits, list entries and folders - comes back as `@vault/path`, so every output round-trips as an input. The two unscoped shapes are the discovery ones: `list({})` is the vault directory, `search({ query })` fans out across every granted vault and merges the per-vault pages into the contract's total order (score desc, recency desc, path asc) before re-paging.
+**One input rule:** a ref is always `@vault/path`. Anything without the prefix is `invalid_path` -
+there is no default vault and no single-vault special case, so a caller that wants a default resolves
+it itself. **One output rule:** every path the router emits - `view.path`, write/edit results, search
+hits, list entries and folders - comes back as `@vault/path`, so every output round-trips as an input.
+The two unscoped shapes are the discovery ones: `list({})` is the vault directory, `search({ query })`
+fans out across every granted vault and merges the per-vault pages into the contract's total order
+(score desc, recency desc, path asc) before re-paging.
 
-**Router = permission check + routing to the corresponding vault instance. No default vault.** It is the responsible layer for permission: the ref's vault is checked against `Access` BEFORE any container call, so an ungranted vault is refused with `forbidden` and zero container interaction (the container's own gate stays the last line of defense). Everything else stays where it belongs - guards, ranking and paging in the store, provisioning in the container - and their refusals pass through untouched (`restricted`, `invalid_path`, `unavailable`). The one refusal the router owns is `unknown_vault` for a granted-but-unprovisioned `@vault`: its message text is a frozen client contract, exported as `unknownVaultMessage`.
+**Router = permission check + routing to the corresponding vault instance. No default vault.** It is
+the responsible layer for permission: the ref's vault is checked against `Access` BEFORE any container
+call, so an ungranted vault is refused with `forbidden` and zero container interaction (the container's
+own gate stays the last line of defense). Everything else stays where it belongs - guards, ranking and
+paging in the store, provisioning in the container - and their refusals pass through untouched
+(`restricted`, `invalid_path`, `unavailable`). The one refusal the router owns is `unknown_vault` for
+a granted-but-unprovisioned `@vault`: its message text is a frozen client contract, exported as
+`unknownVaultMessage`.
 
-Strip the tags off a response and what is left is byte-for-byte what calling the store directly returns - same values, same cursors, same events.
+Strip the tags off a response and what is left is byte-for-byte what calling the store directly
+returns - same values, same cursors, same events.
 
 ### Swap the store, keep the contract
 
@@ -144,13 +219,21 @@ createMemoryStore(); // dev/test fixture - the reference implementation
 | `createMemoryStore`  | tests/dev             | in-process scan (reference impl) |
 | `createBareGitStore` | server (multi-tenant) | `git grep` HEAD                  |
 
-Both pass the same conformance kit, so a consumer written against one runs unchanged on the other. Stores for other worlds (local working copy, FTS-indexed, HTTP client/server) are out of scope for now - they were cut before `1.0.0` and are recoverable from git history.
+Both pass the same conformance kit, so a consumer written against one runs unchanged on the other.
+Stores for other worlds (local working copy, FTS-indexed, HTTP client/server) are out of scope for
+now - they were cut before `1.0.0` and are recoverable from git history.
 
 ## Consumer templates (start here when integrating)
 
-- **MCP tool layer** (memory-mcp shape - token ctx, `@vault/` routing, isError results): `test/integration/mcp-tools.showcase.test.ts`
-- **/v1 REST handlers** (resource JSON, `{error:{code,message}}` envelope, derived stats; `/notes` = the memory__list shape, cursor-drainable on opt-in): `test/integration/rest-api.showcase.test.ts`
-- **Full lifecycle on one vault** (push -> events -> derived state -> restart): `test/integration/e2e-lifecycle.test.ts`
+Working, executed examples - each is a test in this repo, so they can never drift from the API:
+
+- **MCP tool layer** (memory-mcp shape - token ctx, `@vault/` routing, isError results):
+  [`test/integration/mcp-tools.showcase.test.ts`](https://github.com/agentage/memory-core/blob/master/test/integration/mcp-tools.showcase.test.ts)
+- **/v1 REST handlers** (resource JSON, `{error:{code,message}}` envelope, derived stats; `/notes` =
+  the memory\_\_list shape, cursor-drainable on opt-in):
+  [`test/integration/rest-api.showcase.test.ts`](https://github.com/agentage/memory-core/blob/master/test/integration/rest-api.showcase.test.ts)
+- **Full lifecycle on one vault** (push -> events -> derived state -> restart):
+  [`test/integration/e2e-lifecycle.test.ts`](https://github.com/agentage/memory-core/blob/master/test/integration/e2e-lifecycle.test.ts)
 
 ## Conformance
 
@@ -165,7 +248,13 @@ securitySuite({ name: 'my-store', make: () => createMyStore() });
 // HOSTILE_PATHS / RESTRICTED_BODIES / BENIGN_BODIES: fire the same corpus at your HTTP/MCP edge
 ```
 
+The suites live in
+[`src/conformance/`](https://github.com/agentage/memory-core/tree/master/src/conformance) and are
+shipped as a subpath export, not as a dev-only fixture.
+
 ## Test layout & CI
+
+The [`test/`](https://github.com/agentage/memory-core/tree/master/test) tree:
 
 ```
 test/
@@ -176,7 +265,8 @@ test/
 └── perf/          non-functional gate - budgets asserted AND printed to the CI job summary
 ```
 
-CI tiers: **PR** = full verify incl. perf @1000 notes (merge-blocking, `verify` is a required check) · **nightly** = perf @5000 + deep fuzz (500 property runs / 25 differential sequences).
+CI tiers: **PR** = full verify incl. perf @1000 notes (merge-blocking, `verify` is a required check) ·
+**nightly** = perf @5000 + deep fuzz (500 property runs / 25 differential sequences).
 
 ## Develop
 
@@ -184,3 +274,27 @@ CI tiers: **PR** = full verify incl. perf @1000 notes (merge-blocking, `verify` 
 npm install
 npm run verify   # type-check + lint + format:check + coverage + build + dist smoke
 ```
+
+## Release
+
+Releases publish to npm via GitHub Actions when a version bump lands on `master` (the squash-merge
+of a release PR), or by dispatching the workflow by hand. The workflow skips any version already on
+npm and publishes with npm provenance. No one publishes from a laptop.
+
+## Security
+
+Path traversal, reserved namespaces, secret/PII persistence and storage abuse are contract-level
+controls enforced by the conformance kit - see [SECURITY.md](./SECURITY.md). Report vulnerabilities
+privately via GitHub Security Advisories, never a public issue.
+
+## Links
+
+- [agentage.io](https://agentage.io) - the product this engine powers
+- [`@agentage/server-memory`](https://www.npmjs.com/package/@agentage/server-memory) - the stdio MCP
+  server built on it ([source](https://github.com/agentage/server-memory))
+- [github.com/agentage/memory-core](https://github.com/agentage/memory-core) - source, issues,
+  releases
+
+## License
+
+MIT - see [LICENSE](./LICENSE).
