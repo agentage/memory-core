@@ -1,12 +1,32 @@
 {
   "name": "@agentage/memory-core",
   "version": "1.0.0",
-  "description": "The memory engine for agentage: vault store contract, stores, container, router",
+  "description": "Markdown memory engine for AI agents: read, write, search and version notes in a git-backed vault. One storage-agnostic contract, a bare-git store, a multi-vault container and an @vault/path router - the local engine behind agentage Memory and @agentage/server-memory.",
+  "keywords": [
+    "memory",
+    "agent-memory",
+    "ai-memory",
+    "mcp",
+    "model-context-protocol",
+    "markdown",
+    "git",
+    "vault",
+    "knowledge-base",
+    "storage",
+    "notes",
+    "agentage"
+  ],
   "type": "module",
   "license": "MIT",
+  "author": "Agentage",
+  "private": false,
   "repository": {
     "type": "git",
     "url": "git+https://github.com/agentage/memory-core.git"
+  },
+  "homepage": "https://agentage.io",
+  "bugs": {
+    "url": "https://github.com/agentage/memory-core/issues"
   },
   "publishConfig": {
     "access": "public"

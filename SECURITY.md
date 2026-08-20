@@ -13,6 +13,8 @@ The store is the trust boundary between untrusted input (paths, doc content, que
 | YAML abuse                                           | codec never throws, alias expansion bounded test                                | conformance                                              |
 | Partial-state corruption                             | failed write leaves prior doc + emits no event                                  | conformance                                              |
 
-Planned with the git stores: pushed-content validation (`validateTree` pre-receive), symlink non-following, git args hygiene corpus, SSRF policy for webhook hooks, FTS injection corpus, nightly fuzzing.
+Shipped for the bare-git store: pushed content bypasses the write-path guards (a `git push` lands via receive-pack), so the tree itself is checkable. `validateBareRepoTree` is exported from the package root and returns every violation in a ref - `unsafe-path` (the same `safePath` screen, reserved namespaces included), `non-file-mode` (symlinks, submodules, exec bits) and `oversized` (over the 8MB doc cap) - so a pre-receive hook can refuse the push. Nightly fuzzing also runs today (`nightly.yml`: 500 property runs, 25 differential sequences).
+
+Still planned: a git-args hygiene corpus, SSRF policy for webhook hooks, and an FTS injection corpus.
 
 Report vulnerabilities privately via GitHub Security Advisories (Security tab) - do not open public issues.
