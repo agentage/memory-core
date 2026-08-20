@@ -2,8 +2,12 @@ name: nightly
 
 on:
   schedule:
-    - cron: '0 3 * * *'
+    # Off the top of the hour: the estate staggers scheduled runs by 10min offsets.
+    - cron: '17 3 * * *'
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   deep-verify:
