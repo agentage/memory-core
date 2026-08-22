@@ -16,6 +16,9 @@ import {
 } from '../../src/index.js';
 
 const SCALE = Number(process.env.PERF_SCALE ?? 1000);
+// The commit-count axis: history length, independent of how many notes exist.
+// A year of daily use is thousands of commits over a few hundred notes.
+const COMMITS = Number(process.env.PERF_COMMITS ?? 4000);
 const rows: string[] = [];
 
 const record = (metric: string, value: number, budget: number): void => {
@@ -40,15 +43,70 @@ const time = async (n: number, fn: (i: number) => Promise<unknown>): Promise<num
   return out;
 };
 
-const sh = (cwd: string, args: string[]): Promise<string> =>
-  new Promise((resolve, reject) =>
-    execFile('git', ['-C', cwd, ...args], { maxBuffer: 1024 * 1024 * 64 }, (e, so) =>
+const sh = (cwd: string, args: string[], input?: string): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const child = execFile('git', ['-C', cwd, ...args], { maxBuffer: 1024 * 1024 * 64 }, (e, so) =>
       e ? reject(e) : resolve(so)
-    )
-  );
+    );
+    if (input !== undefined) child.stdin?.end(input);
+  });
+
+// A commit ARRIVING from outside, the way a sync push does: plumbing only, no
+// working tree, no store involvement.
+const pushExternally = async (bare: string, path: string, body: string): Promise<void> => {
+  const blob = (await sh(bare, ['hash-object', '-w', '--stdin'], body)).trim();
+  const parent = (await sh(bare, ['rev-parse', 'refs/heads/main'])).trim();
+  await sh(bare, ['read-tree', parent]);
+  await sh(bare, ['update-index', '--add', '--cacheinfo', `100644,${blob},${path}`]);
+  const tree = (await sh(bare, ['write-tree'])).trim();
+  const commit = (
+    await sh(bare, [
+      '-c',
+      'user.email=push@test',
+      '-c',
+      'user.name=push',
+      'commit-tree',
+      tree,
+      '-m',
+      'external',
+      '-p',
+      parent,
+    ])
+  ).trim();
+  await sh(bare, ['update-ref', 'refs/heads/main', commit]);
+};
+
+// The second axis the 1-commit fixture cannot see: a vault accrues one commit per
+// write, and the snapshot build walks all of them. One fast-import builds the
+// history in a single process - CHURN real commits would be CHURN spawns.
+const churnedRepo = async (dir: string, commits: number): Promise<void> => {
+  await sh(tmpdir(), ['init', '--bare', '-b', 'main', dir]);
+  const at = 1_750_000_000;
+  const out: string[] = [];
+  for (let i = 0; i < commits; i++) {
+    const path = `folder-${i % 10}/note-${i % 200}.md`;
+    const body = `---\ntags: [t${i % 7}]\n---\nRevision ${i} of ${path}, about ordinary things.\n`;
+    const msg = `write: ${path}`;
+    out.push(
+      'blob',
+      `mark :${i + 1}`,
+      `data ${Buffer.byteLength(body, 'utf8')}`,
+      body,
+      'commit refs/heads/main',
+      `author perf <perf@test> ${at + i} +0000`,
+      `committer perf <perf@test> ${at + i} +0000`,
+      `data ${Buffer.byteLength(msg, 'utf8')}`,
+      msg,
+      `M 100644 :${i + 1} ${path}`,
+      ''
+    );
+  }
+  await sh(dir, ['fast-import', '--quiet'], out.join('\n'));
+};
 
 let wcDir: string;
 let bareDir: string;
+let churnedDir: string;
 
 // Fixture: SCALE markdown notes across 10 folders, one commit, then a bare clone.
 // ~10% of notes contain the common search term.
@@ -77,11 +135,13 @@ beforeAll(async () => {
   ]);
   bareDir = join(base, 'vault.git');
   await sh(wcDir, ['clone', '--bare', wcDir, bareDir]);
-}, 120_000);
+  churnedDir = join(base, 'churned.git');
+  await churnedRepo(churnedDir, COMMITS);
+}, 300_000);
 
 afterAll(() => {
   const table = [
-    `### memory-core non-functional proof (scale: ${SCALE} notes)`,
+    `### memory-core non-functional proof (scale: ${SCALE} notes, ${COMMITS} commits)`,
     '',
     '| metric | measured | budget | ok |',
     '|---|---|---|---|',
@@ -165,5 +225,54 @@ describe(`non-functional @ ${SCALE} notes`, () => {
   it('refresh: quiet no-op is cheap; a real external change is bounded', async () => {
     const quiet = await time(20, () => bare.refresh());
     record('bare refresh (quiet) avg', quiet.reduce((a, x) => a + x, 0) / quiet.length, 5);
+  }, 60_000);
+});
+
+// The axis the note-count fixture cannot see. Everything here scales with HISTORY:
+// the snapshot build walks it once, and a push must not make that happen again.
+describe(`commit-count axis @ ${COMMITS} commits`, () => {
+  let churned: VaultStore;
+
+  beforeAll(() => {
+    churned = createBareGitStore(churnedDir);
+  });
+
+  it('cold first list pays the history walk exactly once', async () => {
+    const t0 = performance.now();
+    const first = await churned.list({});
+    record('churned cold first list', performance.now() - t0, 5_000);
+    expect(first.files).toBe(200);
+    const warm = await time(5, () => churned.list({}));
+    record('churned list warm avg', warm.reduce((a, x) => a + x, 0) / warm.length, 25);
+  }, 60_000);
+
+  it('an external push costs a bounded patch, not another history walk', async () => {
+    await churned.list({}); // warm at the current version
+    await pushExternally(churnedDir, 'folder-3/pushed.md', 'pushed from outside');
+    const t0 = performance.now();
+    const events = await churned.refresh();
+    const after = await churned.list({});
+    const patched = performance.now() - t0;
+    expect(events.map((e) => e.paths)).toEqual([['folder-3/pushed.md']]);
+    expect(after.files).toBe(201);
+
+    // The cost this replaces, measured in the same run: a fresh instance has to
+    // walk the whole history to answer the same question.
+    const t1 = performance.now();
+    await createBareGitStore(churnedDir).list({});
+    const rebuild = performance.now() - t1;
+    record(
+      `churned external push -> fresh answer (rebuild is ${rebuild.toFixed(0)}ms)`,
+      patched,
+      Math.max(Math.round(rebuild * 0.5), 10)
+    );
+  }, 60_000);
+
+  it('describe is computed once per version, then free', async () => {
+    const cold = await time(1, () => churned.describe());
+    record('churned describe (cold)', cold[0]!, 2_000);
+    const warm = await time(10, () => churned.describe());
+    record('churned describe warm avg', warm.reduce((a, x) => a + x, 0) / warm.length, 2);
+    expect((await churned.describe()).files).toBe(201);
   }, 60_000);
 });

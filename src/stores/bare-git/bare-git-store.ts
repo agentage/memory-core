@@ -25,7 +25,7 @@ import type {
 import type { StoreEvent, StoreObserver, VaultStore } from '../../contract/vault-store.js';
 import { commitChange, gitAuthorOf } from './commit.js';
 import { createGitRunner } from './git-run.js';
-import { buildSnapshot, driftPaths, type Snapshot } from './snapshot.js';
+import { buildSnapshot, driftChanges, patchSnapshot, type Snapshot } from './snapshot.js';
 import { computeVaultStats } from './stats-view.js';
 
 const SEARCH_TIMEOUT_MS = 5_000;
@@ -40,6 +40,8 @@ export const createBareGitStore = (repoDir: string, opts: BareGitStoreOptions = 
   const git = createGitRunner(repoDir, opts.onSpawn);
   const observers = new Set<StoreObserver>();
   let snap: Snapshot | null = null;
+  // The vault card, keyed by the version it was computed from - stale by construction.
+  let described: { version: string; value: VaultDescription } | null = null;
   // undefined = never observed (boot baseline, no event storm); null = seen-empty.
   let lastSeen: string | null | undefined = undefined;
   let chain: Promise<unknown> = Promise.resolve();
@@ -65,7 +67,8 @@ export const createBareGitStore = (repoDir: string, opts: BareGitStoreOptions = 
   };
 
   // P4: any operation may discover the ref moved out-of-band (push received).
-  // Cheap when quiet (one fs read); on drift, diff -> external event -> snapshot drop.
+  // Cheap when quiet (one fs read); on drift, one diff answers BOTH questions -
+  // what to tell observers, and how to move the snapshot to the new version.
   const detectDrift = async (): Promise<StoreEvent[]> => {
     const v = await git.readVersion();
     if (lastSeen === undefined) {
@@ -73,9 +76,17 @@ export const createBareGitStore = (repoDir: string, opts: BareGitStoreOptions = 
       return [];
     }
     if (v === lastSeen || v === null) return [];
-    const paths = await driftPaths(git, lastSeen, v);
-    snap = null; // rebuilt lazily at the new version
-    const event: StoreEvent = { type: 'external', paths, version: v, at: now() };
+    const changes = await driftChanges(git, lastSeen, v);
+    // The diff is the patch: a push must not cost a fresh walk of all history.
+    // A snapshot at any other version, or a patch that cannot be made faithfully,
+    // falls back to the lazy rebuild.
+    snap = snap && snap.version === lastSeen ? await patchSnapshot(git, snap, changes, v) : null;
+    const event: StoreEvent = {
+      type: 'external',
+      paths: changes.map((c) => c.path),
+      version: v,
+      at: now(),
+    };
     emit(event);
     return [event];
   };
@@ -262,15 +273,23 @@ export const createBareGitStore = (repoDir: string, opts: BareGitStoreOptions = 
     },
 
     // Read-only: never creates the repo, so an unprovisioned vault describes as empty.
+    // Derived from the version like every other cached view: two spawns once per
+    // version, then free however many vault cards a page renders.
     async describe(): Promise<VaultDescription> {
       const none = { files: 0, folders: 0, sizeBytes: 0, updated: null, version: null };
       if (!git.repoExists()) return none;
       await detectDrift();
       const version = await git.readVersion();
       if (!version) return none;
-      const { files, folders, sizeBytes } = await computeVaultStats(git, version);
-      const at = await git.tryRun(['log', '-1', '--format=%cI', version]);
-      return { files, folders, sizeBytes, updated: at?.trim() || null, version };
+      if (described?.version !== version) {
+        const { files, folders, sizeBytes } = await computeVaultStats(git, version);
+        const at = await git.tryRun(['log', '-1', '--format=%cI', version]);
+        described = {
+          version,
+          value: { files, folders, sizeBytes, updated: at?.trim() || null, version },
+        };
+      }
+      return { ...described.value }; // a copy: a caller's edit must not become the cache
     },
 
     async version(): Promise<string | null> {

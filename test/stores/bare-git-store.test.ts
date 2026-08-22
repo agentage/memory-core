@@ -1,73 +1,48 @@
-import { execFile, execFileSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
+import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { contractSuite } from '../../src/conformance/contract-suite.js';
 import { securitySuite } from '../../src/conformance/security-suite.js';
 import { createBareGitStore, validateBareRepoTree } from '../../src/index.js';
-
-const runGit = (
-  dir: string,
-  args: string[],
-  input?: string,
-  extraEnv: Record<string, string> = {}
-): Promise<string> =>
-  new Promise((resolve, reject) => {
-    const env = {
-      ...process.env,
-      GIT_DIR: dir,
-      GIT_AUTHOR_NAME: 'ext',
-      GIT_AUTHOR_EMAIL: 'ext@test',
-      GIT_COMMITTER_NAME: 'ext',
-      GIT_COMMITTER_EMAIL: 'ext@test',
-      ...extraEnv,
-    };
-    const child = execFile('git', args, { env }, (err, stdout) =>
-      err ? reject(err) : resolve(stdout)
-    );
-    if (input !== undefined) child.stdin?.end(input);
-  });
-
-// Simulate a `git push` landing: a commit made by another process, bypassing the store.
-const externalCommit = async (
-  dir: string,
-  path: string,
-  content: string,
-  mode = '100644'
-): Promise<void> => {
-  const blob = (await runGit(dir, ['hash-object', '-w', '--stdin'], content)).trim();
-  const parent = (await runGit(dir, ['rev-parse', 'refs/heads/main'])).trim();
-  const idx = join(tmpdir(), `ext-idx-${randomUUID()}`);
-  const env = { GIT_INDEX_FILE: idx };
-  await runGit(dir, ['read-tree', parent], undefined, env);
-  await runGit(
-    dir,
-    ['update-index', '--add', '--cacheinfo', `${mode},${blob},${path}`],
-    undefined,
-    env
-  );
-  const tree = (await runGit(dir, ['write-tree'], undefined, env)).trim();
-  const commit = (await runGit(dir, ['commit-tree', tree, '-m', 'ext', '-p', parent])).trim();
-  await runGit(dir, ['update-ref', 'refs/heads/main', commit]);
-  await rm(idx, { force: true });
-};
+import { externalCommit, runGit } from './external-git.js';
 
 let currentRepo = '';
+let externalTick = 0;
 const makeRepoDir = async (): Promise<string> => {
   const dir = await mkdtemp(join(tmpdir(), 'bare-git-store-'));
   currentRepo = join(dir, 'vault.git');
+  externalTick = 0; // each repo replays the same push sequence from the start
   return currentRepo;
+};
+
+// Cycles add -> modify -> delete, so the kit's external-change proofs see every
+// kind of drift a real push carries, not just an append.
+const mutateExternally = async (): Promise<string[]> => {
+  const n = externalTick++;
+  if (n % 3 === 1) {
+    await externalCommit(currentRepo, [
+      { path: `pushed-${n - 1}.md`, content: `rewritten by push ${n}` },
+    ]);
+    return [`pushed-${n - 1}.md`];
+  }
+  if (n % 3 === 2) {
+    await externalCommit(currentRepo, [{ path: `pushed-${n - 2}.md`, remove: true }]);
+    return [`pushed-${n - 2}.md`];
+  }
+  await externalCommit(currentRepo, [
+    { path: `pushed-${n}.md`, content: `pushed ${n} from outside` },
+  ]);
+  return [`pushed-${n}.md`];
 };
 
 contractSuite({
   name: 'bare-git-store',
   make: async () => createBareGitStore(await makeRepoDir()),
-  mutateExternally: async () => {
-    await externalCommit(currentRepo, 'pushed.md', 'pushed from outside');
-    return ['pushed.md'];
-  },
+  mutateExternally,
+  // A second instance on the same bare repo - what a restart sees.
+  reopen: () => createBareGitStore(currentRepo),
   // A git spawn IS this store's round trip, so the kit can price its own verbs.
   makeCounted: async () => {
     let spawns = 0;
@@ -184,6 +159,45 @@ describe('bare-git-store: spawn budget', () => {
     spawns.length = 0;
     await s.list({});
     expect(spawns).toHaveLength(0);
+
+    // Two spawns once per version (stats + the commit date), then nothing -
+    // a page of vault cards costs one describe, not one per card.
+    spawns.length = 0;
+    await s.describe();
+    const first = spawns.length;
+    spawns.length = 0;
+    await s.describe();
+    expect(spawns).toHaveLength(0);
+    expect(first).toBeLessThanOrEqual(2);
+  });
+
+  // Pinned, not endorsed. The write path is 7 spawns: read the doc, hash the
+  // blob, read-tree/update-index/write-tree, commit-tree, CAS update-ref. The
+  // tree trio is ~45% of the wall clock, and every way to shorten it either
+  // re-implements git's tree encoding or hands the ref update to fast-import -
+  // neither is provably identical, so the number is a gate, not a target.
+  it('the write path costs 7 spawns - a ceiling, so any change is visible', async () => {
+    const repo = await makeRepoDir();
+    const spawns: string[][] = [];
+    const s = createBareGitStore(repo, { onSpawn: (a) => spawns.push(a) });
+    await s.write({ path: 'seed.md', body: 'seed' });
+
+    spawns.length = 0;
+    await s.write({ path: 'work/deep/note.md', body: 'nested' });
+    expect(spawns.map((a) => a[0])).toEqual([
+      'cat-file',
+      'hash-object',
+      'read-tree',
+      'update-index',
+      'write-tree',
+      'commit-tree',
+      'update-ref',
+    ]);
+
+    // A no-op write stops before the commit machinery entirely.
+    spawns.length = 0;
+    await s.write({ path: 'work/deep/note.md', body: 'nested' });
+    expect(spawns.map((a) => a[0])).toEqual(['cat-file']);
   });
 });
 
@@ -194,8 +208,8 @@ describe('validateBareRepoTree', () => {
     await s.write({ path: 'fine.md', body: 'ok' });
     expect(await validateBareRepoTree(repo)).toEqual([]);
 
-    await externalCommit(repo, 'link.md', 'target', '120000');
-    await externalCommit(repo, '.agentage/hooks.json', '{}');
+    await externalCommit(repo, [{ path: 'link.md', content: 'target', mode: '120000' }]);
+    await externalCommit(repo, [{ path: '.agentage/hooks.json', content: '{}' }]);
     const violations = await validateBareRepoTree(repo, { maxBytes: 1 });
     const byPath = new Map(violations.map((v) => [v.path, v.kind]));
     expect(byPath.get('link.md')).toBe('non-file-mode');

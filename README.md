@@ -113,9 +113,14 @@ version-keyed snapshot is already built:
 | `read(path)`                   | 1           | `cat-file --batch`                                              |
 | `readMany(paths)`              | 1           | one `cat-file --batch`, whatever N is                           |
 | `search(query)`                | 2           | `grep`, then one batch for the page it decided                  |
-| `describe()`                   | 2           | `ls-tree -l`, `log -1`                                          |
+| `describe()`                   | 0           | computed once per version (`ls-tree -l`, `log -1`), then cached |
 | `write` / `edit` / `delete`    | 6-7         | blob, tree build, `commit-tree`, compare-and-swap ref update    |
 | first query on a cold store    | +2          | the once-per-version snapshot build (`ls-tree`, `log`)          |
+| a push landing (drift)         | 3           | the diff, an ancestry check, and a log of the range only        |
+
+The snapshot is version-keyed and kept fresh by patches - own writes update it for free, and an
+incoming push is applied from the diff the drift check already paid for. Only a force-push or a
+change git cannot attribute to a commit costs a fresh walk of history.
 
 ## Layers
 
@@ -295,8 +300,10 @@ test/
 └── perf/          non-functional gate - budgets asserted AND printed to the CI job summary
 ```
 
-CI tiers: **PR** = full verify incl. perf @1000 notes (merge-blocking, `verify` is a required check) ·
-**nightly** = perf @5000 + deep fuzz (500 property runs / 25 differential sequences).
+CI tiers: **PR** = full verify incl. perf @1000 notes / 4000 commits (merge-blocking, `verify` is a
+required check) · **nightly** = perf @5000 notes / 20000 commits + deep fuzz (500 property runs /
+25 differential sequences). The perf gate has two axes because the engine has two: note count sets
+the cost of listing and searching, commit count sets the cost of building a snapshot.
 
 ## Develop
 
