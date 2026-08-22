@@ -11,6 +11,10 @@ export interface ConformanceTarget {
   make: () => Promise<VaultStore> | VaultStore;
   // For externally-mutable stores: perform an out-of-band change, return changed paths.
   mutateExternally?: (store: VaultStore) => Promise<string[]>;
+  // Another live instance over the SAME storage (a restart, a second process).
+  // Lets the kit hold a store that FOLLOWED the changes against one that just
+  // built its view from scratch - they must be indistinguishable.
+  reopen?: (store: VaultStore) => Promise<VaultStore> | VaultStore;
   // For process-backed stores: the same store plus a live count of the round trips
   // (subprocesses, HTTP calls) it makes, so budget claims are PROVEN by the kit
   // instead of asserted by the implementation's own tests.
@@ -446,6 +450,23 @@ export const contractSuite = (t: ConformanceTarget): void => {
         expect(d.version).toBe(await store.version());
       });
 
+      if (t.makeCounted) {
+        it('is computed once per version, then free - and moves with a write', async () => {
+          const counted = await t.makeCounted!();
+          await counted.store.write({ path: 'a.md', body: 'x' });
+          const first = await counted.store.describe();
+
+          counted.reset();
+          expect(await counted.store.describe()).toEqual(first);
+          expect(counted.trips(), 'a repeat at the same version must cost nothing').toBe(0);
+
+          await counted.store.write({ path: 'sub/b.md', body: 'y' });
+          const after = await counted.store.describe();
+          expect(after.files).toBe(first.files + 1);
+          expect(after.version).toBe(await counted.store.version());
+        });
+      }
+
       it('counts drop after a delete', async () => {
         await store.write({ path: 'keep.md', body: 'k' });
         await store.write({ path: 'gone/x.md', body: 'g' });
@@ -493,6 +514,48 @@ export const contractSuite = (t: ConformanceTarget): void => {
           expect(emitted[0]!.type).toBe('external');
           expect(emitted[0]!.paths).toEqual(expect.arrayContaining(changed));
           expect(await store.refresh()).toEqual([]); // idempotent
+        });
+      }
+
+      // Following a change and rebuilding after it are two ways to reach the same
+      // state. If they can ever disagree, the cheap path is not an optimization.
+      if (t.mutateExternally && t.reopen) {
+        it('a store that followed the changes answers like one that just opened', async () => {
+          await store.write({ path: 'seed.md', body: 'seed note' });
+          await store.write({ path: 'work/kept.md', body: 'kept note' });
+          for (let i = 0; i < 4; i++) {
+            await t.mutateExternally!(store);
+            await store.refresh();
+          }
+          const fresh = await t.reopen!(store);
+          expect(await store.list({})).toEqual(await fresh.list({}));
+          expect(await store.list({ folder: 'work' })).toEqual(
+            await fresh.list({ folder: 'work' })
+          );
+          expect(await store.list({ depth: 1 })).toEqual(await fresh.list({ depth: 1 }));
+          expect(await store.search({ query: 'note' })).toEqual(
+            await fresh.search({ query: 'note' })
+          );
+          expect(await store.describe()).toEqual(await fresh.describe());
+          expect(await store.read('seed.md')).toEqual(await fresh.read('seed.md'));
+        });
+      }
+
+      if (t.makeCounted && t.mutateExternally) {
+        it('following an external change costs the change, not a rebuild', async () => {
+          const counted = await t.makeCounted!();
+          await counted.store.write({ path: 'seed.md', body: 'x' });
+          await counted.store.list({}); // warm
+          await t.mutateExternally!(counted.store);
+
+          counted.reset();
+          expect(await counted.store.refresh()).toHaveLength(1);
+          const drift = counted.trips();
+
+          counted.reset();
+          await counted.store.list({});
+          expect(counted.trips(), 'answering after a push must not rebuild').toBe(0);
+          expect(drift, 'drift detection is bounded by the diff').toBeLessThanOrEqual(3);
         });
       }
     });

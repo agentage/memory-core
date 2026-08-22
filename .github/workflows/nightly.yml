@@ -14,6 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       PERF_SCALE: '5000'
+      PERF_COMMITS: '20000'
       FUZZ_RUNS: '500'
       FUZZ_DIFF_RUNS: '25'
     steps:
