@@ -4,6 +4,7 @@
 
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { StoreEvent, VaultStore } from '../contract/vault-store.js';
+import { createRouter, type Router } from '../router/router.js';
 
 export interface ConformanceTarget {
   name: string;
@@ -11,6 +12,31 @@ export interface ConformanceTarget {
   // For externally-mutable stores: perform an out-of-band change, return changed paths.
   mutateExternally?: (store: VaultStore) => Promise<string[]>;
 }
+
+// A key PRESENT holding `undefined` is not a JSON value: stringify drops it, so the
+// wire shape differs from the in-process one and MCP output-schema validation
+// rejects the result. Returns the dotted path of every such key found.
+const undefinedKeys = (value: unknown, at = '$'): string[] => {
+  if (Array.isArray(value)) return value.flatMap((v, i) => undefinedKeys(v, `${at}[${i}]`));
+  if (typeof value !== 'object' || value === null) return [];
+  return Object.entries(value).flatMap(([k, v]) =>
+    v === undefined ? [`${at}.${k}`] : undefinedKeys(v, `${at}.${k}`)
+  );
+};
+
+// Hosted clients read every result through the router, so a store's outputs are
+// scanned as the router tags them, not only as the store returns them.
+const ROUTED_VAULT = 'main';
+const routedOver = (store: VaultStore): Router =>
+  createRouter(
+    {
+      list: async () => [ROUTED_VAULT],
+      open: async () => store,
+      create: async () => store,
+      remove: async () => false,
+    },
+    { userId: 'conformance', vaults: '*', canCreate: false, canDelete: false }
+  );
 
 export const contractSuite = (t: ConformanceTarget): void => {
   describe(`${t.name}: contract`, () => {
@@ -190,6 +216,36 @@ export const contractSuite = (t: ConformanceTarget): void => {
           'bulk/n05.md',
           'bulk/n06.md',
         ]);
+      });
+    });
+
+    // "Outputs are always tagged addressable" only holds if they also survive the
+    // wire: a nested folder left unexpanded at depth 2 must have NO `entries` key,
+    // not a key holding undefined.
+    describe('serialize-safe outputs', () => {
+      beforeEach(async () => {
+        for (const path of ['root.md', 'work/a.md', 'work/deep/b.md', 'work/deep/deeper/c.md'])
+          await store.write({ path, body: `body of ${path}` });
+      });
+
+      it('the store never emits a key holding undefined', async () => {
+        for (const q of [{}, { depth: 1 }, { folder: 'work' }, { limit: 2 }])
+          expect(undefinedKeys(await store.list(q))).toEqual([]);
+        expect(undefinedKeys(await store.read('work/deep/b.md'))).toEqual([]);
+        expect(undefinedKeys(await store.search({ query: 'body' }))).toEqual([]);
+      });
+
+      it('nor does the router - nested unexpanded folders carry no entries key', async () => {
+        const r = routedOver(store);
+        const scoped = await r.list({ ref: `@${ROUTED_VAULT}` }); // depth 2, work/deep unexpanded
+        expect(undefinedKeys(scoped)).toEqual([]);
+        expect(undefinedKeys(await r.list({ ref: `@${ROUTED_VAULT}`, depth: 1 }))).toEqual([]);
+        expect(undefinedKeys(await r.list({}))).toEqual([]); // vault-root discovery view
+        expect(undefinedKeys(await r.list({ depth: 1 }))).toEqual([]);
+        expect(undefinedKeys(await r.read(`@${ROUTED_VAULT}/work/deep/b.md`))).toEqual([]);
+        expect(undefinedKeys(await r.search({ query: 'body' }))).toEqual([]);
+        // What the wire does to the shape must be a no-op.
+        expect(JSON.parse(JSON.stringify(scoped))).toStrictEqual(scoped);
       });
     });
 

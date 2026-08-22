@@ -26,6 +26,7 @@ import type {
   SearchQuery,
   SearchResult,
   TreeEntry,
+  TreeFolder,
   WriteAuthor,
   WriteInput,
   WriteResult,
@@ -76,15 +77,13 @@ const parseRef = (ref: string, doc: boolean): Ref => {
   return { vault, path };
 };
 
+// Tagging never ADDS a key: an unexpanded folder keeps having no `entries` at all,
+// because a key holding undefined is not a JSON value and fails schema validation.
 const prefixEntries = (entries: TreeEntry[], prefix: string): TreeEntry[] =>
   entries.map((e) =>
-    e.type === 'file'
+    e.type === 'file' || !e.entries
       ? { ...e, path: `${prefix}/${e.path}` }
-      : {
-          ...e,
-          path: `${prefix}/${e.path}`,
-          entries: e.entries ? prefixEntries(e.entries, prefix) : undefined,
-        }
+      : { ...e, path: `${prefix}/${e.path}`, entries: prefixEntries(e.entries, prefix) }
   );
 
 // The contract's total order, applied to the merged fan-out (score, recency, path).
@@ -125,12 +124,9 @@ export const createRouter = (container: VaultContainer, access: Access): Router 
       const inner = await store.list({ depth: 1, tags: q.tags });
       files += inner.files;
       truncated = truncated || inner.truncated;
-      entries.push({
-        type: 'folder',
-        path: `@${vault}`,
-        files: inner.files,
-        entries: depth >= 2 ? prefixEntries(inner.entries, `@${vault}`) : undefined,
-      });
+      const folder: TreeFolder = { type: 'folder', path: `@${vault}`, files: inner.files };
+      if (depth >= 2) folder.entries = prefixEntries(inner.entries, `@${vault}`);
+      entries.push(folder);
     }
     return { folder: '', entries, truncated, files };
   };
