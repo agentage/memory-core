@@ -40,6 +40,17 @@ describe('router results are the store results, modulo the @vault tag', () => {
     expect(await r.read('@main/missing.md')).toBeNull();
   });
 
+  it('readMany matches the same N store reads, tag aside', async () => {
+    const paths = ['a.md', 'missing.md', 'dir/b.md', 'dir/deep/c.md'];
+    const refs = paths.map((p) => `@main/${p}`);
+    expect(untag(await r.readMany(refs))).toEqual(
+      await Promise.all(paths.map((p) => store.read(p)))
+    );
+    expect(untag(await r.readMany(refs, { clamp: false }))).toEqual(
+      await Promise.all(paths.map((p) => store.read(p, { clamp: false })))
+    );
+  });
+
   it('list matches across folder, depth, tags and cursor paging', async () => {
     expect(untag(await r.list({ ref: '@main' }))).toEqual(await store.list({}));
     expect(untag(await r.list({ ref: '@main/dir' }))).toEqual(await store.list({ folder: 'dir' }));

@@ -11,6 +11,17 @@ export interface ConformanceTarget {
   make: () => Promise<VaultStore> | VaultStore;
   // For externally-mutable stores: perform an out-of-band change, return changed paths.
   mutateExternally?: (store: VaultStore) => Promise<string[]>;
+  // For process-backed stores: the same store plus a live count of the round trips
+  // (subprocesses, HTTP calls) it makes, so budget claims are PROVEN by the kit
+  // instead of asserted by the implementation's own tests.
+  makeCounted?: () => Promise<CountedStore> | CountedStore;
+}
+
+export interface CountedStore {
+  store: VaultStore;
+  // Round trips since the last reset.
+  trips: () => number;
+  reset: () => void;
 }
 
 // A key PRESENT holding `undefined` is not a JSON value: stringify drops it, so the
@@ -105,6 +116,102 @@ export const contractSuite = (t: ConformanceTarget): void => {
         expect(view!.body).not.toContain('[Truncated for display');
         expect(view!.sizeBytes).toBe(70 * 1024);
       });
+    });
+
+    // readMany is the BULK SHAPE of read, nothing else: the contract only holds if
+    // its answer is indistinguishable from the N reads it replaces - same order,
+    // same nulls, same clamp - while costing one storage round trip.
+    describe('readMany', () => {
+      const PATHS = ['a.md', 'work/b.md', 'work/deep/c.md'];
+      beforeEach(async () => {
+        for (const path of PATHS) await store.write({ path, body: `body of ${path} #bulk` });
+      });
+
+      it('answers in request order, with a null in place of every miss', async () => {
+        const asked = ['work/b.md', 'missing.md', 'a.md', 'work/deep/c.md'];
+        const views = await store.readMany(asked);
+        expect(views).toHaveLength(asked.length);
+        expect(views.map((v) => v?.path ?? null)).toEqual([
+          'work/b.md',
+          null,
+          'a.md',
+          'work/deep/c.md',
+        ]);
+      });
+
+      it('is element-wise equal to the same N reads', async () => {
+        const asked = [...PATHS, 'missing.md'];
+        expect(await store.readMany(asked)).toEqual(
+          await Promise.all(asked.map((p) => store.read(p)))
+        );
+      });
+
+      it('repeats a duplicated path in place instead of collapsing it', async () => {
+        const views = await store.readMany(['a.md', 'a.md', 'missing.md', 'a.md']);
+        expect(views.map((v) => v?.path ?? null)).toEqual(['a.md', 'a.md', null, 'a.md']);
+        expect(views[0]).toEqual(views[3]);
+      });
+
+      it('clamps exactly as read does, opt-out included', async () => {
+        await store.write({ path: 'big.md', body: 'z'.repeat(70 * 1024) });
+        const [clamped] = await store.readMany(['big.md']);
+        expect(clamped!.body).toContain('[Truncated for display');
+        expect(clamped!.sizeBytes).toBe(70 * 1024);
+        const [full] = await store.readMany(['big.md'], { clamp: false });
+        expect(full!.body).toBe('z'.repeat(70 * 1024));
+      });
+
+      it('an empty request is an empty answer', async () => {
+        expect(await store.readMany([])).toEqual([]);
+      });
+
+      it('an unreadable path answers null, exactly as read does', async () => {
+        expect(await store.readMany(['../escape.md', '.git/config', 'a.md'])).toEqual([
+          null,
+          null,
+          await store.read('a.md'),
+        ]);
+      });
+
+      it('never mutates: version holds and nothing is emitted', async () => {
+        const version = await store.version();
+        const seen = events.length;
+        await store.readMany([...PATHS, 'missing.md', '../escape.md']);
+        expect(await store.version()).toBe(version);
+        expect(events).toHaveLength(seen);
+      });
+
+      it('through the router: same order, same nulls, every path tagged', async () => {
+        const r = routedOver(store);
+        const refs = PATHS.map((p) => `@${ROUTED_VAULT}/${p}`);
+        const views = await r.readMany([...refs, `@${ROUTED_VAULT}/missing.md`]);
+        expect(views.map((v) => v?.path ?? null)).toEqual([...refs, null]);
+        expect(views[0]).toEqual(await r.read(refs[0]!));
+        expect(undefinedKeys(views)).toEqual([]);
+        expect(await r.readMany([])).toEqual([]);
+      });
+
+      if (t.makeCounted) {
+        it('costs one round trip warm - no more than a single read', async () => {
+          const counted = await t.makeCounted!();
+          for (const path of PATHS) await counted.store.write({ path, body: `body of ${path}` });
+          await counted.store.list({}); // warm whatever a read would warm anyway
+          await counted.store.read('a.md');
+
+          counted.reset();
+          await counted.store.read('a.md');
+          const oneRead = counted.trips();
+
+          counted.reset();
+          const views = await counted.store.readMany([...PATHS, 'missing.md']);
+          expect(views.map((v) => v?.path ?? null)).toEqual([...PATHS, null]);
+          expect(counted.trips()).toBeLessThanOrEqual(Math.max(oneRead, 1));
+
+          counted.reset();
+          expect(await counted.store.readMany([])).toEqual([]);
+          expect(counted.trips()).toBe(0);
+        });
+      }
     });
 
     describe('edit', () => {

@@ -29,6 +29,18 @@ const guardlessStore = (log: string[]): { store: VaultStore; body: string } => {
           deleted: false,
         };
       },
+      readMany: async (paths, opts) => {
+        log.push(`readMany:${paths.join('|')}:${String(opts?.clamp)}`);
+        return paths.map((path) => ({
+          path,
+          title: 'big',
+          frontmatter: {},
+          body,
+          tags: [],
+          updated: NOW,
+          deleted: false,
+        }));
+      },
       write: async (i, author) => {
         log.push(`write:${i.path}:${i.body}:${author?.id ?? '-'}`);
         return { path: i.path, rev: '1', updated: NOW };
@@ -94,6 +106,9 @@ describe('router is a pure binding', () => {
     const { container } = hostileContainer(calls);
     const r = createRouter(container, access({ vaults: new Set(['main']) }));
     await expect(r.read('@other/a.md')).rejects.toMatchObject({ code: 'forbidden' });
+    await expect(r.readMany(['@main/a.md', '@other/a.md'])).rejects.toMatchObject({
+      code: 'forbidden',
+    }); // one ungranted ref refuses the batch, and the granted one costs no IO
     await expect(r.write('@other/a.md', { body: 'x' })).rejects.toMatchObject({
       code: 'forbidden',
     });
@@ -139,6 +154,16 @@ describe('router adds no policy of its own', () => {
     expect(view?.body).toBe(body);
     await r.read('@solo/big.md', { clamp: false });
     expect(log).toEqual(['read:big.md:undefined', 'read:big.md:false']);
+  });
+
+  it('bulk-reads through ONE store call per vault, unclamped and untouched', async () => {
+    const log: string[] = [];
+    const { store, body } = guardlessStore(log);
+    const r = createRouter(soloContainer(store), access({ vaults: new Set(['solo']) }));
+    const views = await r.readMany(['@solo/a.md', '@solo/dir/b.md'], { clamp: false });
+    expect(views.map((v) => v?.path)).toEqual(['@solo/a.md', '@solo/dir/b.md']);
+    expect(views[0]?.body).toBe(body);
+    expect(log).toEqual(['readMany:a.md|dir/b.md:false']); // one call, in-vault paths
   });
 
   it('passes an author through to the store untouched', async () => {

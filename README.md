@@ -68,24 +68,54 @@ not the machine.
 `VaultStore` is the whole surface. One instance = one vault; every store implements the same shape,
 so a consumer written against one runs unchanged on another.
 
-| Verb                    | Returns               | What it does                                                              |
-| ----------------------- | --------------------- | ------------------------------------------------------------------------- |
-| `read(path, opts?)`     | `MemoryView \| null`  | One doc: body, frontmatter, tags, title. Clamped to 64KB unless opted out |
-| `write(input, author?)` | `WriteResult`         | Create or replace a doc; one git commit, attributed to the client         |
-| `edit(input, author?)`  | `WriteResult \| null` | `replace` / `append` / `str_replace` on an existing doc; `null` = absent  |
-| `delete(path)`          | `boolean`             | Remove a doc; recoverable from history. `false` = it was not there        |
-| `search(query)`         | `SearchResult`        | Ranked hits with snippets, `{ results, nextCursor? }`, cap 50 per page    |
-| `list(query)`           | `ListResult`          | Bounded folder tree with truncation + cursor paging                       |
-| `refresh()`             | `StoreEvent[]`        | Pick up out-of-band changes (a `git push`, a human edit) as events        |
-| `subscribe(observer)`   | `() => void`          | Fire-and-forget change events; returns the unsubscribe                    |
-| `describe()`            | `VaultDescription`    | Cheap vault card: `{ files, folders, sizeBytes, updated, version }`       |
-| `version()`             | `string \| null`      | Opaque change token; changes iff content changed, `null` = empty vault    |
-| `capabilities()`        | `StoreCapabilities`   | What this store can do: mutable, versioned, externallyMutable, search     |
+| Verb                     | Returns                  | What it does                                                              |
+| ------------------------ | ------------------------ | ------------------------------------------------------------------------- |
+| `read(path, opts?)`      | `MemoryView \| null`     | One doc: body, frontmatter, tags, title. Clamped to 64KB unless opted out |
+| `readMany(paths, opts?)` | `(MemoryView \| null)[]` | Those same reads in ONE round trip: same order, a `null` per miss         |
+| `write(input, author?)`  | `WriteResult`            | Create or replace a doc; one git commit, attributed to the client         |
+| `edit(input, author?)`   | `WriteResult \| null`    | `replace` / `append` / `str_replace` on an existing doc; `null` = absent  |
+| `delete(path)`           | `boolean`                | Remove a doc; recoverable from history. `false` = it was not there        |
+| `search(query)`          | `SearchResult`           | Ranked hits with snippets, `{ results, nextCursor? }`, cap 50 per page    |
+| `list(query)`            | `ListResult`             | Bounded folder tree with truncation + cursor paging                       |
+| `refresh()`              | `StoreEvent[]`           | Pick up out-of-band changes (a `git push`, a human edit) as events        |
+| `subscribe(observer)`    | `() => void`             | Fire-and-forget change events; returns the unsubscribe                    |
+| `describe()`             | `VaultDescription`       | Cheap vault card: `{ files, folders, sizeBytes, updated, version }`       |
+| `version()`              | `string \| null`         | Opaque change token; changes iff content changed, `null` = empty vault    |
+| `capabilities()`         | `StoreCapabilities`      | What this store can do: mutable, versioned, externallyMutable, search     |
 
 Guards are part of the contract, not of one implementation: refusals come back as a `StoreError`
 with a stable code - `invalid_path`, `restricted`, `unknown_vault`, `forbidden`, `unavailable`.
 A `null` / `[]` / `false` answer always means definitively-not-found; infrastructure failure throws
 `unavailable` instead of a degraded answer.
+
+```ts
+// One page of a folder listing, enriched - one git process, not one per file
+const views = await store.readMany(paths); // (MemoryView | null)[], aligned to `paths`
+await router.readMany(['@main/a.md', '@work/b.md']); // refs may span vaults
+```
+
+`readMany` is the bulk shape of `read` and nothing else: element-for-element the same answer the
+individual reads would give (same order, `null` in place of every miss, same clamp), and an
+infrastructure failure still throws for the whole call rather than degrading one element to a
+`null`. At the router, a ref it would refuse (`invalid_path`, `forbidden`, `unknown_vault`) refuses
+the batch, before any IO.
+
+### What a verb costs (bare git store)
+
+Cost here is git processes. The budget below is asserted by the conformance kit (via the target's
+optional round-trip counter) and by the store's own spawn-budget test - "warm" means the
+version-keyed snapshot is already built:
+
+| Verb                           | Warm spawns | How                                                             |
+| ------------------------------ | ----------- | --------------------------------------------------------------- |
+| `version()`, quiet `refresh()` | 0           | the ref is read as a file, never through git                    |
+| `list()`                       | 0           | served from the snapshot (+1 `cat-file --batch` to filter tags) |
+| `read(path)`                   | 1           | `cat-file --batch`                                              |
+| `readMany(paths)`              | 1           | one `cat-file --batch`, whatever N is                           |
+| `search(query)`                | 2           | `grep`, then one batch for the page it decided                  |
+| `describe()`                   | 2           | `ls-tree -l`, `log -1`                                          |
+| `write` / `edit` / `delete`    | 6-7         | blob, tree build, `commit-tree`, compare-and-swap ref update    |
+| first query on a cold store    | +2          | the once-per-version snapshot build (`ls-tree`, `log`)          |
 
 ## Layers
 

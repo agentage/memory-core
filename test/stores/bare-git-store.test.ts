@@ -68,6 +68,18 @@ contractSuite({
     await externalCommit(currentRepo, 'pushed.md', 'pushed from outside');
     return ['pushed.md'];
   },
+  // A git spawn IS this store's round trip, so the kit can price its own verbs.
+  makeCounted: async () => {
+    let spawns = 0;
+    const store = createBareGitStore(await makeRepoDir(), { onSpawn: () => spawns++ });
+    return {
+      store,
+      trips: () => spawns,
+      reset: () => {
+        spawns = 0;
+      },
+    };
+  },
 });
 
 securitySuite({
@@ -143,7 +155,7 @@ describe('bare-git-store: snapshot consistency', () => {
 });
 
 describe('bare-git-store: spawn budget', () => {
-  it('warm verbs hold the pinned budget: read<=1, search<=2, list=0, version=0', async () => {
+  it('warm verbs hold the pinned budget: read<=1, readMany<=1, search<=2, list=0, version=0', async () => {
     const repo = await makeRepoDir();
     const spawns: string[][] = [];
     const s = createBareGitStore(repo, { onSpawn: (a) => spawns.push(a) });
@@ -158,6 +170,12 @@ describe('bare-git-store: spawn budget', () => {
     spawns.length = 0;
     await s.read('a.md');
     expect(spawns.length).toBeLessThanOrEqual(1);
+
+    // The whole point: N docs cost what ONE read costs, not N times it.
+    spawns.length = 0;
+    const many = await s.readMany(['a.md', 'sub/b.md', 'nope.md', 'a.md']);
+    expect(many.map((v) => v?.path ?? null)).toEqual(['a.md', 'sub/b.md', null, 'a.md']);
+    expect(spawns.map((a) => a[0])).toEqual(['cat-file']);
 
     spawns.length = 0;
     await s.search({ query: 'hello', limit: 10 });

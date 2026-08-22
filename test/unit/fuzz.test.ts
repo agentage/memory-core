@@ -112,6 +112,7 @@ describe('fuzz: differential (memory vs bare-git)', () => {
     | { op: 'edit'; path: string; mode: 'replace' | 'append'; body: string }
     | { op: 'delete'; path: string }
     | { op: 'read'; path: string }
+    | { op: 'readMany'; paths: string[] }
     | { op: 'search'; q: string };
   const opArb: fc.Arbitrary<Op> = fc.oneof(
     fc.record({
@@ -129,6 +130,11 @@ describe('fuzz: differential (memory vs bare-git)', () => {
     }),
     fc.record({ op: fc.constant('delete' as const), path: fc.constantFrom(...paths) }),
     fc.record({ op: fc.constant('read' as const), path: fc.constantFrom(...paths) }),
+    fc.record({
+      op: fc.constant('readMany' as const),
+      // Misses, duplicates and hostile paths in one batch - all in-place nulls.
+      paths: fc.array(fc.constantFrom(...paths, 'gone.md', '../escape.md'), { maxLength: 5 }),
+    }),
     fc.record({ op: fc.constant('search' as const), q: fc.constantFrom(...words) })
   );
 
@@ -146,6 +152,10 @@ describe('fuzz: differential (memory vs bare-git)', () => {
         case 'read': {
           const v = await store.read(op.path);
           return v ? { body: v.body, tags: v.tags, fm: v.frontmatter } : null;
+        }
+        case 'readMany': {
+          const vs = await store.readMany(op.paths);
+          return vs.map((v) => (v ? { body: v.body, tags: v.tags, fm: v.frontmatter } : null));
         }
         case 'search': {
           // Compare rank-relevant fields with a store-independent order: `updated`

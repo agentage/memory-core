@@ -1,7 +1,7 @@
 // Server-world VaultStore: one bare git repo, plumbing commits, no working tree.
 // Same template as every store (validate -> guard -> persist -> emit); the git
-// specifics live in git-run/commit/snapshot. Spawn budget: read 1, search 2,
-// list 0 warm - version checks are fs reads, bulk doc reads are one batch.
+// specifics live in git-run/commit/snapshot. Spawn budget: read 1, readMany 1
+// (N docs, one batch), search 2, list 0 warm - version checks are fs reads.
 
 import { applyEdit } from '../../contract/edit.js';
 import { deriveTags, parseDoc, serializeDoc, titleFromPath } from '../../contract/memory-doc.js';
@@ -126,6 +126,28 @@ export const createBareGitStore = (repoDir: string, opts: BareGitStoreOptions = 
   const readRaw = async (path: string): Promise<string | undefined> =>
     (await git.batchRead('HEAD', [path])).get(path);
 
+  // The one read shape; read and readMany differ only in how many docs one
+  // `cat-file --batch` carried.
+  const viewOf = (
+    path: string,
+    raw: string,
+    mtimes: Map<string, string> | undefined,
+    opts?: { clamp?: boolean }
+  ): MemoryView => {
+    const { frontmatter, body } = parseDoc(raw);
+    const view: MemoryView = {
+      path,
+      title: titleFromPath(path),
+      frontmatter,
+      body,
+      tags: deriveTags(frontmatter, body),
+      updated: mtimes?.get(path) ?? now(),
+      deleted: false,
+      sizeBytes: Buffer.byteLength(raw, 'utf8'),
+    };
+    return opts?.clamp === false ? view : clampView(view);
+  };
+
   return {
     async write(input: WriteInput, author?: WriteAuthor): Promise<WriteResult> {
       assertSafePath(input.path);
@@ -152,18 +174,23 @@ export const createBareGitStore = (repoDir: string, opts: BareGitStoreOptions = 
       await detectDrift();
       const raw = await readRaw(path);
       if (raw === undefined) return null;
-      const { frontmatter, body } = parseDoc(raw);
-      const view: MemoryView = {
-        path,
-        title: titleFromPath(path),
-        frontmatter,
-        body,
-        tags: deriveTags(frontmatter, body),
-        updated: (await getSnap())?.mtimes.get(path) ?? now(),
-        deleted: false,
-        sizeBytes: Buffer.byteLength(raw, 'utf8'),
-      };
-      return opts?.clamp === false ? view : clampView(view);
+      return viewOf(path, raw, (await getSnap())?.mtimes, opts);
+    },
+
+    // N docs, ONE `cat-file --batch` - the same answer N reads give, without N
+    // forks. Unsafe and absent paths never reach git and come back null in place.
+    async readMany(paths: string[], opts?: { clamp?: boolean }): Promise<(MemoryView | null)[]> {
+      if (!paths.length) return [];
+      if (!git.repoExists()) return paths.map(() => null);
+      await detectDrift();
+      // Deduplicated for the wire only - the answer still repeats a repeated path.
+      const wanted = [...new Set(paths.filter((p) => safePath(p)))];
+      const raws = await git.batchRead('HEAD', wanted);
+      const mtimes = raws.size ? (await getSnap())?.mtimes : undefined;
+      return paths.map((p) => {
+        const raw = raws.get(p);
+        return raw === undefined ? null : viewOf(p, raw, mtimes, opts);
+      });
     },
 
     async delete(path: string): Promise<boolean> {

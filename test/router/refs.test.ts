@@ -52,6 +52,8 @@ interface Verb {
 
 const verbs = (r: Router): Verb[] => [
   { name: 'read', run: (ref) => r.read(ref) },
+  // Unwrapped to its single element: a batch of one must answer exactly as read does.
+  { name: 'readMany', run: async (ref) => (await r.readMany([ref]))[0] ?? null },
   { name: 'write', run: (ref) => r.write(ref, { body: 'x' }) },
   { name: 'edit', run: (ref) => r.edit(ref, { mode: 'append', body: 'x' }) },
   { name: 'delete', run: (ref) => r.delete(ref) },
@@ -70,6 +72,24 @@ describe('router ref grammar', () => {
   beforeEach(async () => {
     w = await world(seeds, { over: { vaults: GRANTED } });
     r = createRouter(w.container, w.access);
+  });
+
+  it('bulk-reads across vaults, one answer per ref, in order', async () => {
+    const views = await r.readMany([
+      '@work/dir/a.md',
+      '@main/gone.md',
+      '@main/a.md',
+      '@work/dir/a.md',
+    ]);
+    expect(views.map((v) => v?.path ?? null)).toEqual([
+      '@work/dir/a.md',
+      null,
+      '@main/a.md',
+      '@work/dir/a.md',
+    ]);
+    expect(views[0]?.body).toBe('work note');
+    expect(w.opened.every((v) => GRANTED.has(v))).toBe(true);
+    expect(w.opened.filter((v) => v === 'work')).toHaveLength(1); // one open per vault
   });
 
   it('routes every valid ref shape to its vault and tags what it returns', async () => {
