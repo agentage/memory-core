@@ -4,7 +4,7 @@
 // are exported so consumers can fire the same security inputs at their own
 // HTTP/MCP edges.
 
-export { contractSuite, type ConformanceTarget } from './contract-suite.js';
+export { contractSuite, type ConformanceTarget, type CountedStore } from './contract-suite.js';
 export {
   BENIGN_BODIES,
   HOSTILE_PATHS,

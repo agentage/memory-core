@@ -94,6 +94,24 @@ export const createMemoryStore = (
     return { path, rev: String(counter), updated };
   };
 
+  // The one read shape; read and readMany differ only in arity.
+  const viewOf = (path: string, opts?: { clamp?: boolean }): MemoryView | null => {
+    if (!safePath(path)) return null;
+    const doc = docs.get(path);
+    if (!doc) return null;
+    const view: MemoryView = {
+      path,
+      title: titleFromPath(path),
+      frontmatter: doc.frontmatter,
+      body: doc.body,
+      tags: deriveTags(doc.frontmatter, doc.body),
+      updated: doc.updated,
+      deleted: false,
+      sizeBytes: Buffer.byteLength(serializeDoc(doc.frontmatter, doc.body), 'utf8'),
+    };
+    return opts?.clamp === false ? view : clampView(view);
+  };
+
   return {
     async write(input: WriteInput, author?: WriteAuthor): Promise<WriteResult> {
       assertSafePath(input.path);
@@ -109,20 +127,12 @@ export const createMemoryStore = (
     },
 
     async read(path: string, opts?: { clamp?: boolean }): Promise<MemoryView | null> {
-      if (!safePath(path)) return null;
-      const doc = docs.get(path);
-      if (!doc) return null;
-      const view: MemoryView = {
-        path,
-        title: titleFromPath(path),
-        frontmatter: doc.frontmatter,
-        body: doc.body,
-        tags: deriveTags(doc.frontmatter, doc.body),
-        updated: doc.updated,
-        deleted: false,
-        sizeBytes: Buffer.byteLength(serializeDoc(doc.frontmatter, doc.body), 'utf8'),
-      };
-      return opts?.clamp === false ? view : clampView(view);
+      return viewOf(path, opts);
+    },
+
+    // No round trip to save here - the loop IS the reference semantics.
+    async readMany(paths: string[], opts?: { clamp?: boolean }): Promise<(MemoryView | null)[]> {
+      return paths.map((p) => viewOf(p, opts));
     },
 
     async delete(path: string): Promise<boolean> {

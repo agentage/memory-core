@@ -53,6 +53,11 @@ export interface VaultReader {
   // clamp defaults to true (model-safe 64KB body budget); pass { clamp: false }
   // for full-body reads (REST note read, export flows).
   read(path: string, opts?: { clamp?: boolean }): Promise<MemoryView | null>;
+  // Bulk read: element-wise identical to read() - same order, a null wherever
+  // read() would answer null, same clamp - in ONE storage round trip instead of N.
+  // The guarantee above still holds whole-call: an infra failure throws for the
+  // batch rather than degrading any element to a null.
+  readMany(paths: string[], opts?: { clamp?: boolean }): Promise<(MemoryView | null)[]>;
   // THE listing verb for every surface (MCP tool AND REST): a bounded folder
   // tree with truncation - never paginated (bounded-results contract, AC6).
   list(q: ListQuery): Promise<ListResult>;

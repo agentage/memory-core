@@ -43,6 +43,9 @@ export const unknownVaultMessage = (vault: string): string =>
 // Every verb addresses by ref, and every path it returns is one.
 export interface Router {
   read(ref: string, opts?: { clamp?: boolean }): Promise<MemoryView | null>;
+  // Bulk read over refs: one answer per ref, in order, tagged like read's. Refs
+  // may span vaults - each contributing vault is read once.
+  readMany(refs: string[], opts?: { clamp?: boolean }): Promise<(MemoryView | null)[]>;
   write(ref: string, i: Omit<WriteInput, 'path'>, author?: WriteAuthor): Promise<WriteResult>;
   edit(ref: string, i: Omit<EditInput, 'path'>, author?: WriteAuthor): Promise<WriteResult | null>;
   delete(ref: string): Promise<boolean>;
@@ -136,6 +139,32 @@ export const createRouter = (container: VaultContainer, access: Access): Router 
       const b = await bind(ref, true);
       const view = await b.store.read(b.path, o);
       return view && { ...view, path: qualify(b, view.path) };
+    },
+
+    // Every ref is parsed and authorized BEFORE any container call, so one bad ref
+    // in the batch refuses the whole call at zero IO - exactly as read would.
+    async readMany(refs, o) {
+      if (!refs.length) return [];
+      const parsed = refs.map((ref) => authorize(parseRef(ref, true)));
+      const byVault = new Map<string, number[]>();
+      for (const [i, ref] of parsed.entries()) {
+        const slots = byVault.get(ref.vault);
+        if (slots) slots.push(i);
+        else byVault.set(ref.vault, [i]);
+      }
+      const out: (MemoryView | null)[] = refs.map(() => null);
+      for (const [vault, slots] of byVault) {
+        const b = await open({ vault, path: '' });
+        const views = await b.store.readMany(
+          slots.map((i) => parsed[i]!.path),
+          o
+        );
+        slots.forEach((slot, n) => {
+          const view = views[n];
+          out[slot] = view ? { ...view, path: qualify(b, view.path) } : null;
+        });
+      }
+      return out;
     },
 
     async write(ref, i, author) {

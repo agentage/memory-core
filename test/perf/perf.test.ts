@@ -107,6 +107,25 @@ describe(`non-functional @ ${SCALE} notes`, () => {
     record('bare read p50', quantile(b, 0.5), 30);
   }, 60_000);
 
+  // The fan-out this verb exists for: one folder page of notes, enriched. Priced
+  // against a measured single read, so the claim is a ratio, not a wall clock.
+  it('bulk read: 200 docs cost far less than the 200 reads they replace', async () => {
+    const paths = Array.from({ length: 200 }, (_, i) => `folder-${i % 10}/note-${i}.md`);
+    const perDoc = await time(20, (i) => bare.read(paths[i]!));
+    const avgRead = perDoc.reduce((a, x) => a + x, 0) / perDoc.length;
+    const bulk = await time(3, () => bare.readMany(paths));
+    const best = Math.min(...bulk);
+    record('bare readMany 200 docs', best, 150);
+    // Earns its place only by beating the reads it replaces by an order of magnitude.
+    record(
+      `bare readMany 200 vs 200x read (${(avgRead * 200).toFixed(0)}ms), 20% ceiling`,
+      best,
+      Math.max(Math.round(avgRead * 200 * 0.2), 20)
+    );
+    const views = await bare.readMany(paths);
+    expect(views.filter(Boolean)).toHaveLength(200);
+  }, 60_000);
+
   it('search: p95 within the ADR-011 300ms trigger', async () => {
     const b = await time(10, () => bare.search({ query: 'galaxy', limit: 50 }));
     record('bare search p95', quantile(b, 0.95), 300);
