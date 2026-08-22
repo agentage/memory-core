@@ -1,6 +1,6 @@
 {
   "name": "@agentage/memory-core",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Markdown memory engine for AI agents: read, write, search and version notes in a git-backed vault. One storage-agnostic contract, a bare-git store, a multi-vault container and an @vault/path router - the local engine behind agentage Memory and @agentage/server-memory.",
   "keywords": [
     "memory",
