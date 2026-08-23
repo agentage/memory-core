@@ -79,6 +79,14 @@ const pushExternally = async (bare: string, path: string, body: string): Promise
 // The second axis the 1-commit fixture cannot see: a vault accrues one commit per
 // write, and the snapshot build walks all of them. One fast-import builds the
 // history in a single process - CHURN real commits would be CHURN spawns.
+// Two of every three commits carry a client address, as a real vault's history
+// does - so the attribution pass has something to aggregate, not just to skip.
+const CHURN_AUTHORS = [
+  'Claude <claude@clients.agentage.io>',
+  'Cursor <cursor@clients.agentage.io>',
+  'perf <perf@test>',
+];
+
 const churnedRepo = async (dir: string, commits: number): Promise<void> => {
   await sh(tmpdir(), ['init', '--bare', '-b', 'main', dir]);
   const at = 1_750_000_000;
@@ -93,7 +101,7 @@ const churnedRepo = async (dir: string, commits: number): Promise<void> => {
       `data ${Buffer.byteLength(body, 'utf8')}`,
       body,
       'commit refs/heads/main',
-      `author perf <perf@test> ${at + i} +0000`,
+      `author ${CHURN_AUTHORS[i % 3]} ${at + i} +0000`,
       `committer perf <perf@test> ${at + i} +0000`,
       `data ${Buffer.byteLength(msg, 'utf8')}`,
       msg,
@@ -266,6 +274,19 @@ describe(`commit-count axis @ ${COMMITS} commits`, () => {
       patched,
       Math.max(Math.round(rebuild * 0.5), 10)
     );
+  }, 60_000);
+
+  // Attribution walks the whole history, so its budget belongs on THIS axis and
+  // nowhere else: it is indifferent to how many notes a vault holds.
+  it('authors is one history pass per version, then free', async () => {
+    const cold = await time(1, () => churned.authors());
+    record('churned authors (cold)', cold[0]!, 2_000);
+    const warm = await time(10, () => churned.authors());
+    record('churned authors warm avg', warm.reduce((a, x) => a + x, 0) / warm.length, 2);
+    const rows = await churned.authors();
+    // Two of the three churn identities are clients; the human one is nobody's.
+    expect(rows.map((r) => r.author.id)).toEqual(['claude', 'cursor']);
+    expect(rows[0]!.writes + rows[1]!.writes).toBe(Math.ceil((COMMITS * 2) / 3));
   }, 60_000);
 
   it('describe is computed once per version, then free', async () => {

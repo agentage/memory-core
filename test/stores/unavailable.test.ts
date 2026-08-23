@@ -56,6 +56,7 @@ describe('unavailable: infrastructure failure never reads as not-found', () => {
         code: 'unavailable',
       });
       await expect(store.describe()).rejects.toMatchObject({ code: 'unavailable' });
+      await expect(store.authors()).rejects.toMatchObject({ code: 'unavailable' });
     });
 
     expect((await store.read('a.md'))!.body).toBe('seeded'); // binary back = answers again
@@ -133,6 +134,7 @@ describe('unavailable: the not-found paths still answer null/false', () => {
     expect(await store.delete('nope.md')).toBe(false);
     expect(await store.edit({ path: 'nope.md', body: 'x', mode: 'replace' })).toBeNull();
     expect(await store.describe()).toMatchObject({ files: 0, version: null });
+    expect(await store.authors()).toEqual([]);
     expect((await store.list({})).files).toBe(0);
   });
 

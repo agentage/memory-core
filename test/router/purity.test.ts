@@ -62,6 +62,7 @@ const guardlessStore = (log: string[]): { store: VaultStore; body: string } => {
         return { results: [] };
       },
       describe: async () => ({ files: 0, folders: 0, sizeBytes: 0, updated: null, version: null }),
+      authors: async () => [],
       version: async () => null,
       refresh: async () => [],
       subscribe: () => () => undefined,

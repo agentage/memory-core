@@ -53,6 +53,7 @@ const view = await store.read('inbox/idea.md'); // MemoryView | null - { path, t
 await store.edit({ path: 'inbox/idea.md', mode: 'str_replace', old_str: 'quiet', new_str: 'loud' });
 await store.delete('inbox/idea.md'); // recoverable - git history keeps it
 await store.describe(); // { files, folders, sizeBytes, updated, version } - the vault card
+await store.authors(); // [{ author, writes, lastAt }] - which AIs write here, busiest first
 ```
 
 Every write is a git commit with client attribution; guards are always on (path safety incl.
@@ -80,6 +81,7 @@ so a consumer written against one runs unchanged on another.
 | `refresh()`              | `StoreEvent[]`           | Pick up out-of-band changes (a `git push`, a human edit) as events        |
 | `subscribe(observer)`    | `() => void`             | Fire-and-forget change events; returns the unsubscribe                    |
 | `describe()`             | `VaultDescription`       | Cheap vault card: `{ files, folders, sizeBytes, updated, version }`       |
+| `authors()`              | `AuthorStat[]`           | Who has written here: one row per attributed client, busiest first        |
 | `version()`              | `string \| null`         | Opaque change token; changes iff content changed, `null` = empty vault    |
 | `capabilities()`         | `StoreCapabilities`      | What this store can do: mutable, versioned, externallyMutable, search     |
 
@@ -100,6 +102,31 @@ infrastructure failure still throws for the whole call rather than degrading one
 `null`. At the router, a ref it would refuse (`invalid_path`, `forbidden`, `unknown_vault`) refuses
 the batch, before any IO.
 
+### Who wrote here
+
+```ts
+await store.write({ path: 'a.md', body: 'x' }, { id: 'claude-desktop', name: 'Claude' });
+await store.authors(); // [{ author: { id: 'claude-desktop', name: 'Claude' }, writes: 1, lastAt }]
+```
+
+`authors()` is the read-only view of the attribution `write` and `edit` already record - the same
+history, aggregated. There is no second bookkeeping: the bare store stamps the client as the git
+**author** (the committer stays the system identity), so `authors()` is one `git log` pass and a
+restored clone answers exactly like the store that wrote it.
+
+The contract is deliberately narrow, because everything else is product policy:
+
+- **Attributed changes only.** A write with no author, a `delete`, and a commit that arrived out of
+  band (a `git push` from a person) carry no client and appear in no row.
+- **A change is what the store recorded.** A no-op write makes no commit, so it counts for nobody.
+- **Order is pinned**: `writes` descending, then `author.id` ascending - a total order that never
+  reads a clock, so two stores holding the same history agree. Sort by recency yourself if that is
+  the view you want.
+- `lastAt` is a strict ISO 8601 instant at second precision. What counts as "recently active", how
+  a client is labelled or badged, and which clients to show belong to the host.
+- `writes` and `lastAt` cover the history the store **retains**: every commit for the bare store,
+  what the instance has seen for the in-memory one (`capabilities().versioned` tells you which).
+
 ### What a verb costs (bare git store)
 
 Cost here is git processes. The budget below is asserted by the conformance kit (via the target's
@@ -114,6 +141,7 @@ version-keyed snapshot is already built:
 | `readMany(paths)`              | 1           | one `cat-file --batch`, whatever N is                           |
 | `search(query)`                | 2           | `grep`, then one batch for the page it decided                  |
 | `describe()`                   | 0           | computed once per version (`ls-tree -l`, `log -1`), then cached |
+| `authors()`                    | 0           | one `git log` pass per version, then cached like the card       |
 | `write` / `edit` / `delete`    | 6-7         | blob, tree build, `commit-tree`, compare-and-swap ref update    |
 | `container.bundle(vault)`      | 1           | one `git bundle create - --all` - the whole history, streamed   |
 | first query on a cold store    | +2          | the once-per-version snapshot build (`ls-tree`, `log`)          |

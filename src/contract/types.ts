@@ -51,6 +51,20 @@ export interface WriteAuthor {
   name: string;
 }
 
+// One connected client's write history in this vault - the read-only view of the
+// attribution `write`/`edit` recorded. ATTRIBUTED changes only: a write with no
+// author, and a change that arrived out of band, belong to no client and are in
+// no row. `writes` and `lastAt` cover the history the store RETAINS (git: every
+// commit; in-memory: what the instance has seen).
+export interface AuthorStat {
+  // The author as the write supplied it. `id` round-trips through whatever the
+  // store addresses a client by, so a character that address cannot hold is lost.
+  author: WriteAuthor;
+  writes: number;
+  // Strict ISO 8601 instant of the latest attributed change; second precision.
+  lastAt: string;
+}
+
 export interface MemoryView {
   path: string;
   title: string;

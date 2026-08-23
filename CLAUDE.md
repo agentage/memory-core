@@ -32,12 +32,12 @@ CI: PR = full `verify` incl. perf @1000 notes. Nightly = perf @5000 + deep fuzz.
 
 House rule is files < 200 lines (`~/vaults/projects/standards/code-style.md`). These four are deliberate:
 
-- `src/conformance/contract-suite.ts` (405) - one shipped spec; splitting it splits the guarantee.
-- `src/stores/bare-git/bare-git-store.ts` (271) - the reference store; its 8 verbs share one
+- `src/conformance/contract-suite.ts` (683) - one shipped spec; splitting it splits the guarantee.
+- `src/stores/bare-git/bare-git-store.ts` (335) - the reference store; its verbs share one
   snapshot/commit closure that costs more to thread across files than to read in one.
 - `src/stores/bare-git/git-run.ts` (213) - the whole hermetic-spawn boundary (env voiding, timeouts,
   byte caps, `unavailable` mapping) in one auditable place.
-- `src/stores/memory-store.ts` (202) - the reference implementation, kept a mirror of the contract's
+- `src/stores/memory-store.ts` (227) - the reference implementation, kept a mirror of the contract's
   own ordering so a reader can diff the two by eye.
 
 ## Rules

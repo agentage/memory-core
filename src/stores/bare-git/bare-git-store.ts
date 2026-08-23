@@ -11,6 +11,7 @@ import { assertNoRestricted, frontmatterText } from '../../contract/restricted-d
 import { rankAndPageDeferred } from '../../contract/search.js';
 import { DEFAULT_LIST_DEPTH, normalizeFolder, pageTree } from '../../contract/tree.js';
 import type {
+  AuthorStat,
   EditInput,
   ListQuery,
   ListResult,
@@ -23,6 +24,7 @@ import type {
   WriteResult,
 } from '../../contract/types.js';
 import type { StoreEvent, StoreObserver, VaultStore } from '../../contract/vault-store.js';
+import { readAuthors } from './authors-view.js';
 import { commitChange, gitAuthorOf } from './commit.js';
 import { createGitRunner } from './git-run.js';
 import { buildSnapshot, driftChanges, patchSnapshot, type Snapshot } from './snapshot.js';
@@ -42,6 +44,8 @@ export const createBareGitStore = (repoDir: string, opts: BareGitStoreOptions = 
   let snap: Snapshot | null = null;
   // The vault card, keyed by the version it was computed from - stale by construction.
   let described: { version: string; value: VaultDescription } | null = null;
+  // The other pure function of the version: who has written here.
+  let authored: { version: string; value: AuthorStat[] } | null = null;
   // undefined = never observed (boot baseline, no event storm); null = seen-empty.
   let lastSeen: string | null | undefined = undefined;
   let chain: Promise<unknown> = Promise.resolve();
@@ -290,6 +294,20 @@ export const createBareGitStore = (repoDir: string, opts: BareGitStoreOptions = 
         };
       }
       return { ...described.value }; // a copy: a caller's edit must not become the cache
+    },
+
+    // Read-only like describe, and cached the same way: ONE `git log` per version,
+    // then free however many memory cards a page renders.
+    async authors(): Promise<AuthorStat[]> {
+      if (!git.repoExists()) return [];
+      await detectDrift();
+      const version = await git.readVersion();
+      if (!version) return [];
+      if (authored?.version !== version) {
+        authored = { version, value: await readAuthors(git, version) };
+      }
+      // A deep copy for the same reason describe copies: the cache is never handed out.
+      return authored.value.map((a) => ({ ...a, author: { ...a.author } }));
     },
 
     async version(): Promise<string | null> {

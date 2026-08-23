@@ -4,6 +4,7 @@
 // store follows: validate -> guard -> persist -> emit. Never 'unavailable':
 // there is no infrastructure to fail, so null/false here are always not-found.
 
+import { recordAuthored, rankAuthors, type AuthorTally } from '../contract/authorship.js';
 import { applyEdit } from '../contract/edit.js';
 import { deriveTags, serializeDoc, titleFromPath } from '../contract/memory-doc.js';
 import { assertSafePath, safePath } from '../contract/paths.js';
@@ -12,6 +13,7 @@ import { assertNoRestricted, frontmatterText } from '../contract/restricted-data
 import { countOccurrences, rankAndPage } from '../contract/search.js';
 import { DEFAULT_LIST_DEPTH, normalizeFolder, pageTree } from '../contract/tree.js';
 import type {
+  AuthorStat,
   EditInput,
   ListQuery,
   ListResult,
@@ -46,6 +48,10 @@ export const createMemoryStore = (
 ): VaultStore => {
   const now = opts.now ?? ((): string => new Date().toISOString());
   const docs = new Map<string, Doc>();
+  // The write history this store retains. A tally rather than a commit list: an
+  // in-memory store must not grow with the number of writes it has served, and one
+  // row per client is everything `authors()` is allowed to answer anyway.
+  const authored: AuthorTally = new Map();
   const observers = new Set<StoreObserver>();
   let counter = 0;
   let lastChange: string | null = null;
@@ -90,6 +96,9 @@ export const createMemoryStore = (
     }
     const updated = now();
     docs.set(path, { frontmatter, body, updated });
+    // After the no-op return, so a write that changed nothing counts for nobody -
+    // the bare store cannot count one either, because it makes no commit.
+    if (author) recordAuthored(authored, author, updated);
     emit({ type, paths: [path], author });
     return { path, rev: String(counter), updated };
   };
@@ -185,6 +194,12 @@ export const createMemoryStore = (
         updated: lastChange,
         version: versionOf(),
       };
+    },
+
+    // The tally IS the history here, so ranking it is the whole verb - no cache to
+    // key by version, and nothing to recompute.
+    async authors(): Promise<AuthorStat[]> {
+      return rankAuthors(authored);
     },
 
     async version(): Promise<string | null> {
