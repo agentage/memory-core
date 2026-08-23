@@ -1,6 +1,7 @@
 // The two verbs that let a host own no root of its own: export one vault
-// (bundle) and erase one account (destroyUser). Both answer to Access first -
-// a refusal must never double as a hint that someone else's data is there.
+// (bundle) and erase one user's stored data (destroyUserData). Both answer to
+// Access first - a refusal must never double as a hint that someone else's data
+// is there.
 
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -87,7 +88,7 @@ describe('container.bundle', () => {
   });
 });
 
-describe('container.destroyUser', () => {
+describe('container.destroyUserData', () => {
   it('erases every vault the user owns, tombstones included, and disposes the live objects', async () => {
     const root = await makeRoot();
     const disposed: string[] = [];
@@ -100,12 +101,12 @@ describe('container.destroyUser', () => {
     await container.remove(a, 'gone', 's1'); // a tombstone must go too
     disposed.length = 0;
 
-    expect(await container.destroyUser(a, 'alice01')).toBe(true);
+    expect(await container.destroyUserData(a, 'alice01')).toBe(true);
     expect(disposed.sort()).toEqual(['alice01/main', 'alice01/work']);
     expect(cache.size).toBe(0);
     expect(existsSync(userDir(root, 'alice01'))).toBe(false);
     expect(await container.list(a)).toEqual([]);
-    expect(await container.destroyUser(a, 'alice01')).toBe(false); // idempotent
+    expect(await container.destroyUserData(a, 'alice01')).toBe(false); // idempotent
   });
 
   it('erases only the caller own account, and only with canDelete', async () => {
@@ -116,21 +117,21 @@ describe('container.destroyUser', () => {
     const alice = access({ vaults: '*' });
     await container.create(alice, 'main');
 
-    await expect(container.destroyUser(alice, 'bob02')).rejects.toMatchObject({
+    await expect(container.destroyUserData(alice, 'bob02')).rejects.toMatchObject({
       code: 'forbidden',
     });
-    await expect(container.destroyUser(alice, 'nobody22')).rejects.toMatchObject({
+    await expect(container.destroyUserData(alice, 'nobody22')).rejects.toMatchObject({
       code: 'forbidden',
     }); // an account that does not exist reads the same as one that does
     await expect(
-      container.destroyUser(access({ canDelete: false, vaults: '*' }), 'alice01')
+      container.destroyUserData(access({ canDelete: false, vaults: '*' }), 'alice01')
     ).rejects.toMatchObject({ code: 'forbidden' });
     for (const bad of HOSTILE_IDS) {
-      await expect(container.destroyUser(alice, bad), bad).rejects.toMatchObject({
+      await expect(container.destroyUserData(alice, bad), bad).rejects.toMatchObject({
         code: 'invalid_path',
       });
       await expect(
-        container.destroyUser(access({ userId: bad, vaults: '*' }), bad),
+        container.destroyUserData(access({ userId: bad, vaults: '*' }), bad),
         bad
       ).rejects.toMatchObject({ code: 'invalid_path' });
     }
@@ -145,7 +146,7 @@ describe('container.destroyUser', () => {
     await container.create(a, 'main');
     await chmod(userDir(root, 'alice01'), 0o000);
     try {
-      await expect(container.destroyUser(a, 'alice01')).rejects.toMatchObject({
+      await expect(container.destroyUserData(a, 'alice01')).rejects.toMatchObject({
         code: 'unavailable',
       });
     } finally {

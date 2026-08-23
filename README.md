@@ -161,7 +161,7 @@ Router      permission fail-fast: the ref's vault is checked against Access BEFO
   |         container call; every path it emits comes back as @vault/path
   v
 Container   Access-gated lifecycle over <root>/<userId>/<vault>.git - list/create/open/
-  |         remove/bundle/destroyUser, plus the root's own facts (checkRoot) and the
+  |         remove/bundle/destroyUserData, plus the root's own facts (checkRoot) and the
   |         layout helpers; open never provisions; an ObjectCache holds one live store
   |         instance per vault (LRU by object count, dispose on evict)
   v
@@ -226,7 +226,7 @@ await container.create(access, 'work'); // gated by canCreate, idempotent
 await container.open(access, 'work'); // NEVER provisions - unknown_vault if absent
 await container.remove(access, 'work', stamp); // gated by canDelete -> <vault>.deleted-<stamp>.git
 await container.bundle(access, 'work'); // Buffer | null - clone-able git bundle, history included
-await container.destroyUser(access, userId); // account erasure: own user + canDelete, tombstones too
+await container.destroyUserData(access, userId); // erase a user's DATA: own user + canDelete, tombstones too
 ```
 
 `Access` (`{ userId, vaults: Set | '*', canCreate, canDelete }`) is the only authority the container
@@ -240,10 +240,11 @@ provisioned).
 
 `bundle` is the export path: gated exactly like `open`, `null` when there is nothing to export (no
 repo yet, no commits yet, or a tombstoned name) - so an absent vault of another account never reads
-differently from an empty one of your own. `destroyUser` is the account erasure, the one verb keyed
-by user rather than vault: it refuses any `userId` but `access.userId` (`forbidden`, whether or not
-that account exists), needs `canDelete`, disposes every live object it wipes, and takes the
-tombstones with it. There is no stamp - `remove` tombstones, `destroyUser` erases.
+differently from an empty one of your own. `destroyUserData` erases what a user has STORED - not the
+user, whose account lives in your identity service and never in here - and is the one verb keyed by
+user rather than vault: it refuses any `userId` but `access.userId` (`forbidden`, whether or not that
+user has anything here), needs `canDelete`, disposes every live object it wipes, and takes the
+tombstones with it. There is no stamp - `remove` tombstones, `destroyUserData` erases.
 
 ### The root itself - health, layout
 
@@ -309,7 +310,7 @@ paging in the store, provisioning in the container - and their refusals pass thr
 (`restricted`, `invalid_path`, `unavailable`). The one refusal the router owns is `unknown_vault` for
 a granted-but-unprovisioned `@vault`: its message text is a frozen client contract, exported as
 `unknownVaultMessage`. What it asks for is the lifecycle subset, `RoutedContainer` (`list` / `open` /
-`create` / `remove`): export and account erasure are not routing concerns, so a container verb can be
+`create` / `remove`): export and data erasure are not routing concerns, so a container verb can be
 added without widening what a router - or a stand-in for one - has to provide.
 
 Strip the tags off a response and what is left is byte-for-byte what calling the store directly
