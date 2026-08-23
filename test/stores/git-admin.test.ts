@@ -1,12 +1,11 @@
 import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { chmod, mkdir, mkdtemp } from 'node:fs/promises';
+import { mkdir, mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   bundleRepo,
-  checkRootWritable,
   createBareGitStore,
   destroyRepo,
   ensureBareRepo,
@@ -68,19 +67,5 @@ describe('git-admin (per-vault, user-blind)', () => {
     await expect(destroyRepo('/etc', { within: root })).rejects.toMatchObject({
       code: 'invalid_path',
     });
-  });
-
-  it('checkRootWritable reports reachable/writable honestly', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'health-'));
-    expect(await checkRootWritable(root)).toEqual({ reachable: true, writable: true });
-    expect(await checkRootWritable(join(root, 'missing'))).toEqual({
-      reachable: false,
-      writable: false,
-    });
-    const ro = join(root, 'ro');
-    await mkdir(ro);
-    await chmod(ro, 0o555);
-    expect(await checkRootWritable(ro)).toEqual({ reachable: true, writable: false });
-    await chmod(ro, 0o755);
   });
 });

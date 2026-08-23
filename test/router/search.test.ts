@@ -10,7 +10,7 @@ import {
   MAX_SEARCH_LIMIT,
   type SeedFile,
   type SearchResult,
-  type VaultContainer,
+  type RoutedContainer,
 } from '../../src/index.js';
 import { createRouter, type Router } from '../../src/router/router.js';
 import { world } from './harness.js';
@@ -29,7 +29,7 @@ interface Doc {
 // A container that lists the same vaults in the opposite order. The merged order
 // must not depend on it - without the path tiebreak a full tie would follow the
 // fan-out order instead, and this is the only fixture that can see the difference.
-const reverseList = (c: VaultContainer): VaultContainer => ({
+const reverseList = (c: RoutedContainer): RoutedContainer => ({
   ...c,
   list: async (a) => (await c.list(a)).reverse(),
 });

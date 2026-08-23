@@ -11,7 +11,7 @@
 // Binding is PURE - createRouter does no IO, so a router is cheap enough to build
 // per request. Guards, ranking, paging and path validation stay in the store.
 
-import type { Access, VaultContainer } from '../container/vault-container.js';
+import type { Access, RoutedContainer } from '../container/vault-container.js';
 import { decodeCursor, encodeCursor } from '../contract/cursor.js';
 import { StoreError } from '../contract/errors.js';
 import { isSafeSegment } from '../contract/paths.js';
@@ -93,7 +93,7 @@ const prefixEntries = (entries: TreeEntry[], prefix: string): TreeEntry[] =>
 const byRank = (a: SearchHit, b: SearchHit): number =>
   b.score - a.score || b.updated.localeCompare(a.updated) || a.path.localeCompare(b.path);
 
-export const createRouter = (container: VaultContainer, access: Access): Router => {
+export const createRouter = (container: RoutedContainer, access: Access): Router => {
   // The router's own gate: an ungranted vault never becomes a container call.
   const authorize = (ref: Ref): Ref => {
     if (access.vaults !== '*' && !access.vaults.has(ref.vault))

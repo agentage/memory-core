@@ -6,7 +6,7 @@
 //    proves the router carries no copy.
 
 import { describe, expect, it } from 'vitest';
-import type { VaultContainer, VaultStore } from '../../src/index.js';
+import type { RoutedContainer, VaultStore } from '../../src/index.js';
 import { READ_BODY_BUDGET } from '../../src/index.js';
 import { createRouter } from '../../src/router/router.js';
 import { access, hostileContainer, NOW } from './harness.js';
@@ -75,7 +75,7 @@ const guardlessStore = (log: string[]): { store: VaultStore; body: string } => {
   };
 };
 
-const soloContainer = (store: VaultStore): VaultContainer => ({
+const soloContainer = (store: VaultStore): RoutedContainer => ({
   list: async () => ['solo'],
   open: async () => store,
   create: async () => store,
