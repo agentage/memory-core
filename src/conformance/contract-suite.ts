@@ -480,6 +480,114 @@ export const contractSuite = (t: ConformanceTarget): void => {
       });
     });
 
+    // Attribution is only useful if it means the same thing wherever a memory is
+    // stored, so the kit pins WHO gets counted, WHAT counts as a write, and the
+    // order the rows come back in. Everything a product does with them - active
+    // windows, badges, labels - is built on top and is not the store's business.
+    describe('authors', () => {
+      const CLAUDE = { id: 'claude', name: 'Claude' };
+      const CURSOR = { id: 'cursor', name: 'Cursor' };
+
+      it('an untouched vault has no authors, and asking never provisions', async () => {
+        expect(await store.authors()).toEqual([]);
+        expect(await store.version()).toBeNull();
+        expect(events).toHaveLength(0);
+      });
+
+      it('counts writes and edits per client, and dates the latest one', async () => {
+        const first = await store.write({ path: 'a.md', body: 'one' }, CLAUDE);
+        await store.edit({ path: 'a.md', mode: 'append', body: 'two' }, CLAUDE);
+        const rows = await store.authors();
+        expect(rows).toHaveLength(1);
+        expect(rows[0]).toMatchObject({ author: CLAUDE, writes: 2 });
+        // Both stores date to the second; the instant, not the rendering, is the contract.
+        expect(Number.isFinite(Date.parse(rows[0]!.lastAt))).toBe(true);
+        expect(Math.abs(Date.parse(rows[0]!.lastAt) - Date.parse(first.updated))).toBeLessThan(
+          5_000
+        );
+      });
+
+      it('counts only what the store actually recorded as a change', async () => {
+        await store.write({ path: 'sys.md', body: 'x' }); // no author: a system write
+        expect(await store.authors()).toEqual([]);
+        await store.write({ path: 'a.md', body: 'same' }, CLAUDE);
+        await store.write({ path: 'a.md', body: 'same' }, CLAUDE); // no-op: no change, no count
+        await store.delete('a.md'); // a delete carries no client
+        expect(await store.authors()).toEqual([
+          { author: CLAUDE, writes: 1, lastAt: expect.any(String) },
+        ]);
+      });
+
+      it('ranks busiest first, ties by client id - never by a clock', async () => {
+        await store.write({ path: 'c1.md', body: '1' }, CURSOR);
+        await store.write({ path: 'c2.md', body: '2' }, CURSOR);
+        await store.write({ path: 'k.md', body: '3' }, CLAUDE);
+        await store.write({ path: 'z.md', body: '4' }, { id: 'zed', name: 'Zed' });
+        expect((await store.authors()).map((a) => a.author.id)).toEqual([
+          'cursor',
+          'claude',
+          'zed',
+        ]);
+      });
+
+      it('never mutates: version holds, nothing is emitted, repeats identically', async () => {
+        await store.write({ path: 'a.md', body: 'x' }, CLAUDE);
+        const version = await store.version();
+        const seen = events.length;
+        const rows = await store.authors();
+        expect(await store.authors()).toEqual(rows);
+        expect(await store.version()).toBe(version);
+        expect(events).toHaveLength(seen);
+      });
+
+      it('hands out a copy - a caller mutating a row cannot poison the next answer', async () => {
+        await store.write({ path: 'a.md', body: 'x' }, CLAUDE);
+        const rows = await store.authors();
+        rows[0]!.writes = 999;
+        rows[0]!.author.name = 'tampered';
+        expect(await store.authors()).toEqual([
+          { author: CLAUDE, writes: 1, lastAt: expect.any(String) },
+        ]);
+      });
+
+      if (t.reopen) {
+        it('survives a reopen: durable history reads back the same', async () => {
+          await store.write({ path: 'a.md', body: 'x' }, CLAUDE);
+          await store.write({ path: 'b.md', body: 'y' }, CLAUDE);
+          const fresh = await t.reopen!(store);
+          expect(await fresh.authors()).toEqual(await store.authors());
+        });
+      }
+
+      if (t.makeCounted) {
+        it('costs one pass per version, then nothing', async () => {
+          const counted = await t.makeCounted!();
+          await counted.store.write({ path: 'a.md', body: 'x' }, CLAUDE);
+          const first = await counted.store.authors();
+          expect(first[0]).toMatchObject({ author: CLAUDE, writes: 1 });
+
+          counted.reset();
+          expect(await counted.store.authors()).toEqual(first);
+          expect(counted.trips(), 'a repeat at the same version must cost nothing').toBe(0);
+
+          await counted.store.write({ path: 'b.md', body: 'y' }, CLAUDE);
+          counted.reset();
+          expect((await counted.store.authors())[0]!.writes).toBe(2);
+          expect(counted.trips(), 'a new version costs one history pass').toBeLessThanOrEqual(1);
+        });
+      }
+
+      if (t.mutateExternally) {
+        it('a change that arrived out of band belongs to no client', async () => {
+          await store.write({ path: 'a.md', body: 'x' }, CLAUDE);
+          const before = await store.authors();
+          await t.mutateExternally!(store);
+          await store.refresh();
+          expect(await store.authors()).toEqual(before);
+        });
+      }
+    });
+
     describe('version + refresh + events', () => {
       it('version is null on an empty vault and stable across reads', async () => {
         expect(await store.version()).toBeNull();

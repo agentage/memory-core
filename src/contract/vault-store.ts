@@ -1,4 +1,5 @@
 import type {
+  AuthorStat,
   EditInput,
   ListQuery,
   ListResult,
@@ -64,6 +65,11 @@ export interface VaultReader {
   search(q: SearchQuery): Promise<SearchResult>;
   // Cheap storage facts for a vault card - product shapes (names, histograms) live in the host.
   describe(): Promise<VaultDescription>;
+  // The write history, aggregated: one row per attributed client, busiest first
+  // (ties by id). Read-only and version-cacheable like describe(); `[]` when
+  // nothing attributed was ever written. What "recently active" means, and how a
+  // client is labelled, stay host policy - this answers who wrote, how often, when.
+  authors(): Promise<AuthorStat[]>;
 }
 
 export interface VaultWriter {

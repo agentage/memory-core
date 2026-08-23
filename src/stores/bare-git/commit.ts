@@ -8,6 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { WriteAuthor } from '../../contract/types.js';
 import type { GitRunner } from './git-run.js';
 
 const ZERO_OID = '0'.repeat(40);
@@ -82,15 +83,24 @@ export const commitChange = async (
   }
 };
 
+// The client address is this store's ONE attribution encoding, and both directions
+// live here so history can be read back as the write that made it.
+export const CLIENT_EMAIL_SUFFIX = '@clients.agentage.io';
+
 // The git author identity for an attributed write: stable email-safe address
 // from the authenticated client id (what the dashboard groups by).
-export const gitAuthorOf = (author?: {
-  id: string;
-  name: string;
-}): { name: string; email: string } | undefined =>
+export const gitAuthorOf = (author?: WriteAuthor): { name: string; email: string } | undefined =>
   author
     ? {
         name: author.name,
-        email: `${author.id.replace(/[^a-zA-Z0-9._-]/g, '-')}@clients.agentage.io`,
+        email: `${author.id.replace(/[^a-zA-Z0-9._-]/g, '-')}${CLIENT_EMAIL_SUFFIX}`,
       }
+    : undefined;
+
+// The inverse. Anything else authored the commit - the system identity on an
+// unattributed write, or a human's own identity on a pushed one - so it belongs to
+// no client and reads back as undefined.
+export const clientAuthorOf = (name: string, email: string): WriteAuthor | undefined =>
+  email.endsWith(CLIENT_EMAIL_SUFFIX)
+    ? { id: email.slice(0, -CLIENT_EMAIL_SUFFIX.length), name }
     : undefined;

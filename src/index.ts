@@ -1,6 +1,7 @@
 // @agentage/memory-core - vault store contract, stores, container, router.
 
 export type {
+  AuthorStat,
   EditInput,
   ListQuery,
   ListResult,
