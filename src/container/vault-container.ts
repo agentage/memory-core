@@ -50,11 +50,12 @@ export interface VaultContainer {
   open(a: Access, vault: string): Promise<VaultStore>;
   // A clone-able git bundle of one vault, history included - the export path.
   bundle(a: Access, vault: string): Promise<Buffer | null>;
-  // Account erasure: every vault of ONE user, tombstones included, gone for good.
-  destroyUser(a: Access, userId: string): Promise<boolean>;
+  // Erases what ONE user has STORED: every vault they own, tombstones included,
+  // gone for good. Not the user - accounts live in the auth service, not here.
+  destroyUserData(a: Access, userId: string): Promise<boolean>;
 }
 
-// What ROUTING needs - the lifecycle verbs only. Export and account erasure are
+// What ROUTING needs - the lifecycle verbs only. Export and data erasure are
 // not routing concerns, so a router (or a double standing in for one) never sees
 // them, and adding a verb to the container never widens what the router demands.
 export type RoutedContainer = Pick<VaultContainer, 'list' | 'open' | 'create' | 'remove'>;
@@ -159,9 +160,9 @@ export const createVaultContainer = (opts: VaultContainerOptions): VaultContaine
       return bundleRepo(resolve(a, vault).dir);
     },
 
-    // Only the user themselves, and only with the delete grant - there is no
+    // Only the user's own data, and only with the delete grant - there is no
     // cross-user sweep, and no stamp: this is the erase, not the tombstone.
-    async destroyUser(a: Access, userId: string): Promise<boolean> {
+    async destroyUserData(a: Access, userId: string): Promise<boolean> {
       assertSegment('userId', a.userId);
       assertSegment('userId', userId);
       if (a.userId !== userId) throw new StoreError('forbidden', `no access to user: ${userId}`);
