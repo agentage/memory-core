@@ -7,14 +7,23 @@
 // the COMPOSITION ROOT builds with its own cleanup -
 //   new ObjectCache<VaultStore>({ max: 256, dispose: (s, key) => detach(s, key) })
 // - because whoever creates subscriptions owns tearing them down. The container
-// borrows that cache and never configures it.
+// borrows that cache and never configures it. Paths are never joined here: every
+// one comes from container/layout.ts, which allowlists the name first.
 
 import { readdir, rename, stat } from 'node:fs/promises';
-import { join } from 'node:path';
 import type { ObjectCache } from '../cache/object-cache.js';
 import { StoreError } from '../contract/errors.js';
 import { isSafeSegment } from '../contract/paths.js';
 import type { VaultStore } from '../contract/vault-store.js';
+import { bundleRepo, destroyRepo } from '../stores/bare-git/git-admin.js';
+import {
+  assertSegment,
+  assertStamp,
+  REPO_SUFFIX,
+  tombstoneRepoDir,
+  userDir,
+  vaultRepoDir,
+} from './layout.js';
 
 // What a caller CLAIMS to be - never trusted, never a path segment.
 export interface Principal {
@@ -39,7 +48,16 @@ export interface VaultContainer {
   // `stamp` names the tombstone - callers own time, the engine owns no clock.
   remove(a: Access, vault: string, stamp: string): Promise<boolean>;
   open(a: Access, vault: string): Promise<VaultStore>;
+  // A clone-able git bundle of one vault, history included - the export path.
+  bundle(a: Access, vault: string): Promise<Buffer | null>;
+  // Account erasure: every vault of ONE user, tombstones included, gone for good.
+  destroyUser(a: Access, userId: string): Promise<boolean>;
 }
+
+// What ROUTING needs - the lifecycle verbs only. Export and account erasure are
+// not routing concerns, so a router (or a double standing in for one) never sees
+// them, and adding a verb to the container never widens what the router demands.
+export type RoutedContainer = Pick<VaultContainer, 'list' | 'open' | 'create' | 'remove'>;
 
 export interface VaultContainerOptions {
   root: string;
@@ -48,22 +66,6 @@ export interface VaultContainerOptions {
   provision: (dir: string) => Promise<void>;
   cache: ObjectCache<VaultStore>;
 }
-
-const REPO_SUFFIX = '.git';
-
-// Stamps are caller-supplied text that becomes a directory name.
-const SAFE_STAMP = /^[A-Za-z0-9:._-]{1,64}$/;
-
-const invalid = (what: string, value: string): StoreError =>
-  new StoreError('invalid_path', `invalid ${what}: ${JSON.stringify(value)}`);
-
-const assertSegment = (what: string, value: string): void => {
-  if (!isSafeSegment(value)) throw invalid(what, value);
-};
-
-const assertStamp = (stamp: string): void => {
-  if (!SAFE_STAMP.test(stamp) || stamp.includes('..')) throw invalid('stamp', stamp);
-};
 
 // Only an absent directory is "no vault"; EACCES and friends are infrastructure.
 const isMissing = (err: unknown): boolean => {
@@ -93,25 +95,29 @@ export const createVaultContainer = (opts: VaultContainerOptions): VaultContaine
     assertSegment('vault', vault);
     if (a.vaults !== '*' && !a.vaults.has(vault))
       throw new StoreError('forbidden', `no access to vault: ${vault}`);
-    return { key: `${a.userId}/${vault}`, dir: join(root, a.userId, `${vault}${REPO_SUFFIX}`) };
+    return { key: `${a.userId}/${vault}`, dir: vaultRepoDir(root, a.userId, vault) };
   };
 
   const live = (key: string, dir: string): VaultStore => cache.get(key, () => opts.store(dir));
 
+  // Every repo dir a user owns, tombstones included - the raw layout, ungated.
+  const repoSlugs = async (userId: string): Promise<string[]> => {
+    const dir = userDir(root, userId); // a bad name never reaches the fs, nor the catch
+    try {
+      const entries = await readdir(dir, { withFileTypes: true });
+      return entries
+        .filter((e) => e.isDirectory() && e.name.endsWith(REPO_SUFFIX))
+        .map((e) => e.name.slice(0, -REPO_SUFFIX.length));
+    } catch (err) {
+      if (isMissing(err)) return [];
+      throw unavailable(`readdir ${userId}`, err);
+    }
+  };
+
   return {
     async list(a: Access): Promise<string[]> {
-      assertSegment('userId', a.userId);
-      let entries;
-      try {
-        entries = await readdir(join(root, a.userId), { withFileTypes: true });
-      } catch (err) {
-        if (isMissing(err)) return [];
-        throw unavailable(`readdir ${a.userId}`, err);
-      }
       return (
-        entries
-          .filter((e) => e.isDirectory() && e.name.endsWith(REPO_SUFFIX))
-          .map((e) => e.name.slice(0, -REPO_SUFFIX.length))
+        (await repoSlugs(a.userId))
           // Tombstones carry a dot, so the segment allowlist drops them with everything else off-layout.
           .filter((name) => isSafeSegment(name) && (a.vaults === '*' || a.vaults.has(name)))
           .sort()
@@ -139,12 +145,35 @@ export const createVaultContainer = (opts: VaultContainerOptions): VaultContaine
       if (!a.canDelete) throw new StoreError('forbidden', 'not allowed to delete vaults');
       if (!(await dirExists(dir))) return false;
       try {
-        await rename(dir, join(root, a.userId, `${vault}.deleted-${stamp}${REPO_SUFFIX}`));
+        await rename(dir, tombstoneRepoDir(root, a.userId, vault, stamp));
       } catch (err) {
         throw unavailable(`rename ${vault}`, err);
       }
       cache.delete(key); // the live object now points at a tombstone
       return true;
+    },
+
+    // Gated exactly like open(), but absence is an empty answer rather than a
+    // refusal: null = nothing to export (no repo, or no commits yet).
+    async bundle(a: Access, vault: string): Promise<Buffer | null> {
+      return bundleRepo(resolve(a, vault).dir);
+    },
+
+    // Only the user themselves, and only with the delete grant - there is no
+    // cross-user sweep, and no stamp: this is the erase, not the tombstone.
+    async destroyUser(a: Access, userId: string): Promise<boolean> {
+      assertSegment('userId', a.userId);
+      assertSegment('userId', userId);
+      if (a.userId !== userId) throw new StoreError('forbidden', `no access to user: ${userId}`);
+      if (!a.canDelete) throw new StoreError('forbidden', 'not allowed to delete vaults');
+      const dir = userDir(root, userId);
+      for (const slug of await repoSlugs(userId)) cache.delete(`${userId}/${slug}`);
+      try {
+        return await destroyRepo(dir, { within: root });
+      } catch (err) {
+        if (err instanceof StoreError) throw err;
+        throw unavailable(`destroy ${userId}`, err);
+      }
     },
   };
 };

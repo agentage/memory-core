@@ -115,6 +115,7 @@ version-keyed snapshot is already built:
 | `search(query)`                | 2           | `grep`, then one batch for the page it decided                  |
 | `describe()`                   | 0           | computed once per version (`ls-tree -l`, `log -1`), then cached |
 | `write` / `edit` / `delete`    | 6-7         | blob, tree build, `commit-tree`, compare-and-swap ref update    |
+| `container.bundle(vault)`      | 1           | one `git bundle create - --all` - the whole history, streamed   |
 | first query on a cold store    | +2          | the once-per-version snapshot build (`ls-tree`, `log`)          |
 | a push landing (drift)         | 3           | the diff, an ancestry check, and a log of the range only        |
 
@@ -132,8 +133,9 @@ Router      permission fail-fast: the ref's vault is checked against Access BEFO
   |         container call; every path it emits comes back as @vault/path
   v
 Container   Access-gated lifecycle over <root>/<userId>/<vault>.git - list/create/open/
-  |         remove; open never provisions; an ObjectCache holds one live store instance
-  |         per vault (LRU by object count, dispose on evict)
+  |         remove/bundle/destroyUser, plus the root's own facts (checkRoot) and the
+  |         layout helpers; open never provisions; an ObjectCache holds one live store
+  |         instance per vault (LRU by object count, dispose on evict)
   v
 VaultStore  the frozen contract - read/write/edit/delete/search/list/describe + events;
   |         guards always on (path safety, restricted data, size caps, read clamp)
@@ -195,6 +197,8 @@ await container.list(access); // allowlist-intersected, sorted
 await container.create(access, 'work'); // gated by canCreate, idempotent
 await container.open(access, 'work'); // NEVER provisions - unknown_vault if absent
 await container.remove(access, 'work', stamp); // gated by canDelete -> <vault>.deleted-<stamp>.git
+await container.bundle(access, 'work'); // Buffer | null - clone-able git bundle, history included
+await container.destroyUser(access, userId); // account erasure: own user + canDelete, tombstones too
 ```
 
 `Access` (`{ userId, vaults: Set | '*', canCreate, canDelete }`) is the only authority the container
@@ -205,6 +209,46 @@ configures the cache: the composition root builds the `ObjectCache` with its own
 whoever creates subscriptions owns tearing them down. Refusals are coded: `invalid_path` (hostile id
 or stamp), `forbidden` (outside the grant, or missing canCreate/canDelete), `unknown_vault` (not
 provisioned).
+
+`bundle` is the export path: gated exactly like `open`, `null` when there is nothing to export (no
+repo yet, no commits yet, or a tombstoned name) - so an absent vault of another account never reads
+differently from an empty one of your own. `destroyUser` is the account erasure, the one verb keyed
+by user rather than vault: it refuses any `userId` but `access.userId` (`forbidden`, whether or not
+that account exists), needs `canDelete`, disposes every live object it wipes, and takes the
+tombstones with it. There is no stamp - `remove` tombstones, `destroyUser` erases.
+
+### The root itself - health, layout
+
+Above one vault sits the root, and a host should not have to open `node:fs` to reason about it:
+
+```ts
+import {
+  checkRoot,
+  vaultRepoDir,
+  userDir,
+  tombstoneRepoDir,
+  REPO_SUFFIX,
+} from '@agentage/memory-core';
+
+// facts, never exceptions - a vanished root is all-false + zeros, not a throw
+const facts = await checkRoot('/data/repos', { markerFile: '.volume-ok' });
+// { reachable, writable, markerPresent: boolean | null, diskFreeBytes, diskTotalBytes }
+
+vaultRepoDir('/data/repos', 'alice01', 'main'); // /data/repos/alice01/main.git
+userDir('/data/repos', 'alice01'); // /data/repos/alice01
+tombstoneRepoDir('/data/repos', 'alice01', 'main', stamp); // ...main.deleted-<stamp>.git
+```
+
+`checkRoot` is cheap by default - `access(R_OK|W_OK)`, because health endpoints poll forever. Pass
+`probeWrite: true` for the honest test (write + unlink) when the bits can lie: a full disk or a
+read-only remount still reports `writable` permission. `markerFile` catches the writable-but-WRONG
+volume, and is `null` (not `false`) when no marker was asked for. `checkRootWritable(dir)` stays as
+it was - the same two booleans, write-probing, now a projection of the fact set.
+
+The layout helpers are the same ones the container computes with: every segment goes through the
+allowlist, so a hostile name throws `invalid_path` instead of returning a path (there is no way to
+get a path out of a name that was never safe). Stamps allow dots and colons - timestamps - but never
+a separator.
 
 ### One addressable surface over those vaults (the router)
 
@@ -236,7 +280,9 @@ own gate stays the last line of defense). Everything else stays where it belongs
 paging in the store, provisioning in the container - and their refusals pass through untouched
 (`restricted`, `invalid_path`, `unavailable`). The one refusal the router owns is `unknown_vault` for
 a granted-but-unprovisioned `@vault`: its message text is a frozen client contract, exported as
-`unknownVaultMessage`.
+`unknownVaultMessage`. What it asks for is the lifecycle subset, `RoutedContainer` (`list` / `open` /
+`create` / `remove`): export and account erasure are not routing concerns, so a container verb can be
+added without widening what a router - or a stand-in for one - has to provide.
 
 Strip the tags off a response and what is left is byte-for-byte what calling the store directly
 returns - same values, same cursors, same events.

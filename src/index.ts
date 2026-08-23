@@ -72,13 +72,20 @@ export {
   type Access,
   type Principal,
   type ResolveAccess,
+  type RoutedContainer,
   type VaultContainer,
   type VaultContainerOptions,
 } from './container/vault-container.js';
+export { REPO_SUFFIX, tombstoneRepoDir, userDir, vaultRepoDir } from './container/layout.js';
+export {
+  checkRoot,
+  checkRootWritable,
+  type CheckRootOptions,
+  type RootFacts,
+} from './container/root-health.js';
 export { createRouter, unknownVaultMessage, type Router } from './router/router.js';
 export {
   bundleRepo,
-  checkRootWritable,
   destroyRepo,
   ensureBareRepo,
   listVaultDirs,

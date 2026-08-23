@@ -1,9 +1,11 @@
-// Per-VAULT git fleet helpers for server hosts. Deliberately user-blind: "which
-// vaults belong to whom" is host policy - the host loops its own layout over
-// these per-repo operations. All destructive ops are containment-checked.
+// Per-VAULT git fleet helpers for server hosts, and STRICTLY per-vault: anything
+// about the root above them (is it there, writable, the right volume, how full)
+// lives in container/root-health.ts. Deliberately user-blind: "which vaults
+// belong to whom" is host policy - the host loops its own layout over these
+// per-repo operations. All destructive ops are containment-checked.
 
-import { readdir, rm, stat, unlink, writeFile } from 'node:fs/promises';
-import { join, resolve, sep } from 'node:path';
+import { readdir, rm, stat } from 'node:fs/promises';
+import { resolve, sep } from 'node:path';
 import { StoreError } from '../../contract/errors.js';
 import { createGitRunner } from './git-run.js';
 
@@ -51,23 +53,4 @@ export const destroyRepo = async (repoDir: string, opts: { within: string }): Pr
   );
   await rm(target, { recursive: true, force: true });
   return existed;
-};
-
-// Startup sentinel + /health probe: the root exists and is writable.
-export const checkRootWritable = async (
-  dir: string
-): Promise<{ reachable: boolean; writable: boolean }> => {
-  try {
-    await readdir(dir);
-  } catch {
-    return { reachable: false, writable: false };
-  }
-  const probe = join(dir, `.probe-${process.pid}-${Date.now()}`);
-  try {
-    await writeFile(probe, 'ok', 'utf8');
-    await unlink(probe);
-    return { reachable: true, writable: true };
-  } catch {
-    return { reachable: true, writable: false };
-  }
 };

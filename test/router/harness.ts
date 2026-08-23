@@ -12,7 +12,7 @@ import {
   ObjectCache,
   type Access,
   type SeedFile,
-  type VaultContainer,
+  type RoutedContainer,
   type VaultStore,
 } from '../../src/index.js';
 
@@ -28,7 +28,7 @@ export const access = (over: Partial<Access> = {}): Access => ({
 
 export interface World {
   root: string;
-  container: VaultContainer;
+  container: RoutedContainer;
   access: Access;
   // Every container call in order ('list', 'open:<vault>'), and the vaults that
   // actually yielded a store.
@@ -79,7 +79,7 @@ export const world = async (
 
   const calls: string[] = [];
   const opened: string[] = [];
-  const container: VaultContainer = {
+  const container: RoutedContainer = {
     async list(who) {
       calls.push('list');
       return real.list(who);
@@ -118,7 +118,7 @@ export const world = async (
 // A container that fails on contact: anything the router does at bind time shows up.
 export const hostileContainer = (
   calls: string[]
-): { container: VaultContainer; calls: string[] } => {
+): { container: RoutedContainer; calls: string[] } => {
   const boom = (what: string): never => {
     calls.push(what);
     throw new Error('container touched');
