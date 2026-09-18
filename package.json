@@ -62,17 +62,17 @@
     "smoke:dist": "node --input-type=module -e \"const m = await import('./dist/index.js'); const k = await import('./dist/conformance/index.js'); if (typeof k.contractSuite !== 'function' || !Array.isArray(k.HOSTILE_PATHS)) process.exit(1); if (typeof m.ObjectCache !== 'function' || typeof m.createVaultContainer !== 'function' || typeof m.createRouter !== 'function') process.exit(1); if (m.unknownVaultMessage('x') !== 'Unknown vault \\\"@x\\\". Use memory__list with no folder to see available vaults.') process.exit(1); const c = new m.ObjectCache({ max: 1 }); const o = c.get('a', () => ({})); if (c.get('a', () => ({})) !== o || c.size !== 1 || !c.has('a')) process.exit(1); if (m.vaultRepoDir('/data', 'alice01', 'main') !== '/data/alice01/main.git' || m.REPO_SUFFIX !== '.git') process.exit(1); try { m.vaultRepoDir('/data', 'alice01', '../escape'); process.exit(1); } catch (e) { if (e.code !== 'invalid_path') process.exit(1); } const gone = await m.checkRoot('/definitely/not/here', { markerFile: '.volume' }); if (gone.reachable !== false || gone.writable !== false || gone.markerPresent !== false || gone.diskTotalBytes !== 0) process.exit(1); const here = await m.checkRoot(process.cwd()); if (here.reachable !== true || here.markerPresent !== null || !(here.diskFreeBytes > 0) || here.diskFreeBytes > here.diskTotalBytes) process.exit(1); const s = m.createMemoryStore(); if ((await s.authors()).length !== 0) process.exit(1); await s.write({ path: 'a.md', body: 'x' }, { id: 'cli', name: 'CLI' }); await s.write({ path: 'b.md', body: 'y' }); const [who, ...rest] = await s.authors(); if (rest.length || who.author.id !== 'cli' || who.author.name !== 'CLI' || who.writes !== 1 || !Number.isFinite(Date.parse(who.lastAt))) process.exit(1); console.log('dist smoke ok');\""
   },
   "dependencies": {
-    "yaml": "^2.6.0"
+    "yaml": "^2.9.1"
   },
   "devDependencies": {
-    "@types/node": "^26.5.0",
+    "@types/node": "^26.5.1",
     "@typescript-eslint/eslint-plugin": "^8.70.0",
     "@typescript-eslint/parser": "^8.67.0",
-    "@vitest/coverage-v8": "^5.0.0",
+    "@vitest/coverage-v8": "^5.0.1",
     "eslint": "^10.10.0",
     "eslint-config-prettier": "^10.0.0",
     "eslint-plugin-prettier": "^5.2.1",
-    "fast-check": "^4.9.0",
+    "fast-check": "^4.10.0",
     "prettier": "^3.4.0",
     "typescript": "^6.0.3",
     "vitest": "^5.0.0"
