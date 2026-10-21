@@ -1,5 +1,7 @@
 name: publish
 
+# Publishes on a chore(release) merge via OIDC trusted publishing (npmjs.com publisher = this file).
+
 on:
   workflow_dispatch:
   push:
@@ -22,17 +24,8 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          registry-url: https://registry.npmjs.org
+      - run: npm install -g npm@latest && npm --version # OIDC needs npm >= 11.5.1
       - run: npm ci
-      - name: Preflight - provenance needs a public repo, publish needs a token
-        env:
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-        run: |
-          [ "${{ github.event.repository.private }}" = "false" ] || {
-            echo "::error::npm rejects --provenance from a private repo - make this repo public first"
-            exit 1
-          }
-          [ -n "$NPM_TOKEN" ] || { echo "::error::NPM_TOKEN secret is missing"; exit 1; }
       - name: Skip if this version is already published
         id: gate
         run: |
@@ -48,8 +41,6 @@ jobs:
           fi
       - name: Publish to npm
         if: steps.gate.outputs.exists == 'false'
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         # A concurrent run (dispatch + push double-fire) can win the race after the gate; that IS success.
         run: |
           if ! npm publish --access public --provenance; then
