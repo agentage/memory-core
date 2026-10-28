@@ -7,8 +7,8 @@ This repo grew up as **`store-core`** and was renamed to `memory-core`; it publi
 different `0.5.x` engine - no upgrade path, different API. That old engine repo is archived as
 `agentage/archive_memory-core`; do not port code from it.
 
-Consumers: `@agentage/server-memory` (stdio MCP), `@agentage/cli`, `web`'s `memory-mcp`. A contract
-change here is a fan-out - rebuild and check all three.
+Consumers: `@agentage/server-memory` (stdio MCP) and the memory service in `agentage/memory`. A
+contract change here is a fan-out - rebuild and check both.
 
 ## Architecture
 
