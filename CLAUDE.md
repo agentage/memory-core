@@ -30,7 +30,7 @@ CI: PR = full `verify` incl. perf @1000 notes. Nightly = perf @5000 + deep fuzz.
 
 ## Documented >200-line exemptions
 
-House rule is files < 200 lines (`~/vaults/projects/standards/code-style.md`). These four are deliberate:
+House rule is files < 200 lines (`~/vaults/engineering/standards/code-style.md`). These four are deliberate:
 
 - `src/conformance/contract-suite.ts` (683) - one shipped spec; splitting it splits the guarantee.
 - `src/stores/bare-git/bare-git-store.ts` (335) - the reference store; its verbs share one
