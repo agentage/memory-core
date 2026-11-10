@@ -25,11 +25,14 @@ const ISO_LINE = /^\d{4}-\d\d-\d\dT/;
 // newest-first, so the first mention of a path wins.
 const datesFrom = async (git: GitRunner, range: string): Promise<Map<string, string>> => {
   const mtimes = new Map<string, string>();
-  const log = await git.tryRun(['log', '--format=%cI', '--name-only', range]);
+  // -z preserves UTF-8 path bytes and newlines inside filenames. Git emits a
+  // separator newline before each path record; strip only that separator.
+  const log = await git.tryRun(['log', '-z', '--format=%cI', '--name-only', range]);
   if (!log) return mtimes;
   let date = '';
-  for (const line of log.split('\n')) {
-    if (line === '') continue;
+  for (const record of log.split('\0')) {
+    const line = record.startsWith('\n') ? record.slice(1) : record;
+    if (!line) continue;
     if (ISO_LINE.test(line)) date = line.trim();
     else if (!mtimes.has(line)) mtimes.set(line, date);
   }
@@ -37,8 +40,8 @@ const datesFrom = async (git: GitRunner, range: string): Promise<Map<string, str
 };
 
 export const buildSnapshot = async (git: GitRunner, version: string): Promise<Snapshot> => {
-  const tree = await git.tryRun(['ls-tree', '-r', '--name-only', version]);
-  const paths = new Set((tree ?? '').split('\n').filter(Boolean));
+  const tree = await git.tryRun(['ls-tree', '-r', '--name-only', '-z', version]);
+  const paths = new Set((tree ?? '').split('\0').filter(Boolean));
   return { version, paths, mtimes: await datesFrom(git, version) };
 };
 
@@ -52,20 +55,23 @@ export const driftChanges = async (
   next: string
 ): Promise<DriftChange[]> => {
   if (!old) {
-    const tree = await git.tryRun(['ls-tree', '-r', '--name-only', next]);
+    const tree = await git.tryRun(['ls-tree', '-r', '--name-only', '-z', next]);
     return (tree ?? '')
-      .split('\n')
+      .split('\0')
       .filter(Boolean)
       .map((path) => ({ path, deleted: false }));
   }
-  const out = await git.tryRun(['diff', '--name-status', '--no-renames', old, next]);
-  return (out ?? '')
-    .split('\n')
-    .filter(Boolean)
-    .map((line) => {
-      const tab = line.indexOf('\t');
-      return { path: line.slice(tab + 1), deleted: line.slice(0, tab) === 'D' };
-    });
+  // -z emits status and raw path as consecutive NUL-terminated records.
+  const out = await git.tryRun(['diff', '--name-status', '--no-renames', '-z', old, next]);
+  const fields = (out ?? '').split('\0').filter(Boolean);
+  const changes: DriftChange[] = [];
+  for (let i = 0; i + 1 < fields.length; i += 2) {
+    const status = fields[i];
+    const path = fields[i + 1];
+    if (status === undefined || path === undefined) continue;
+    changes.push({ path, deleted: status === 'D' });
+  }
+  return changes;
 };
 
 // Move a snapshot to `version` using the diff the drift check already paid for:

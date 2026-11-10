@@ -18,9 +18,9 @@ export const validateBareRepoTree = async (
 ): Promise<TreeViolation[]> => {
   const ref = opts.ref ?? 'refs/heads/main';
   const maxBytes = opts.maxBytes ?? MAX_DOC_BYTES;
-  const stdout = await createGitRunner(repoDir).run(['ls-tree', '-r', '-l', ref]);
+  const stdout = await createGitRunner(repoDir).run(['ls-tree', '-r', '-l', '-z', ref]);
   const violations: TreeViolation[] = [];
-  for (const line of stdout.split('\n')) {
+  for (const line of stdout.split('\0')) {
     if (!line) continue;
     const tab = line.indexOf('\t');
     const [mode, type, , size] = line.slice(0, tab).trim().split(/\s+/);
