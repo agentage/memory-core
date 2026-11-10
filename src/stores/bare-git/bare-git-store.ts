@@ -255,16 +255,23 @@ export const createBareGitStore = (repoDir: string, opts: BareGitStoreOptions = 
       if (!s) return { results: [] };
       // -o = one line per occurrence -> occurrence count; -F -i mirror the contract.
       const grep = await git.tryRun(
-        ['grep', '-o', '-I', '-i', '-F', '--no-color', '--threads=2', '-e', q, s.version],
+        ['grep', '-z', '-o', '-I', '-i', '-F', '--no-color', '--threads=2', '-e', q, s.version],
         { timeoutMs: SEARCH_TIMEOUT_MS }
       );
       if (!grep) return { results: [] }; // exit 1 = no match; an infra failure already threw
       const counts = new Map<string, number>();
-      for (const line of grep.split('\n')) {
-        if (!line) continue;
-        const rest = line.slice(line.indexOf(':') + 1);
-        const path = rest.slice(0, rest.indexOf(':'));
+      // With -z, a record is "revision:path\0matched-text\n", so file names
+      // containing Unicode, quotes, or newlines are never C-quoted or split.
+      for (let cursor = 0; cursor < grep.length;) {
+        const sep = grep.indexOf('\0', cursor);
+        if (sep < 0) break;
+        const end = grep.indexOf('\n', sep + 1);
+        if (end < 0) break;
+        const label = grep.slice(cursor, sep);
+        const colon = label.indexOf(':');
+        const path = colon < 0 ? '' : label.slice(colon + 1);
         if (path) counts.set(path, (counts.get(path) ?? 0) + 1);
+        cursor = end + 1;
       }
       // grep already yields every ranking input (path, occurrences, mtime), so the
       // page is decided before any blob is read - one page of docs, not one per match.
