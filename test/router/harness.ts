@@ -40,7 +40,7 @@ export interface World {
   files(vault: string): Promise<number>;
 }
 
-export interface WorldOptions {
+interface WorldOptions {
   over?: Partial<Access>;
   // Per-vault `updated` stamps, consumed in seed order; the last one sticks.
   clocks?: Record<string, string[]>;
