@@ -13,7 +13,7 @@ export interface Snapshot {
 }
 
 // One changed path between two versions, and whether it survived the change.
-export interface DriftChange {
+interface DriftChange {
   path: string;
   deleted: boolean;
 }

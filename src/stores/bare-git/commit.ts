@@ -16,7 +16,7 @@ const MAX_CAS_RETRIES = 5;
 // A live update-ref holds the ref-lock for ms; older means a crashed writer.
 const STALE_LOCK_MS = 10_000;
 
-export interface TreeChange {
+interface TreeChange {
   path: string;
   blobSha?: string;
   remove?: boolean;
@@ -85,7 +85,7 @@ export const commitChange = async (
 
 // The client address is this store's ONE attribution encoding, and both directions
 // live here so history can be read back as the write that made it.
-export const CLIENT_EMAIL_SUFFIX = '@clients.agentage.io';
+const CLIENT_EMAIL_SUFFIX = '@clients.agentage.io';
 
 // The git author identity for an attributed write: stable email-safe address
 // from the authenticated client id (what the dashboard groups by).

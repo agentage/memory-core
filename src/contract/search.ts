@@ -35,7 +35,7 @@ export interface RankedHit {
 
 // The metadata a matcher can produce without opening the document. Enough to
 // order and page; only the surviving page ever needs a body (for the snippet).
-export interface LeanHit {
+interface LeanHit {
   path: string;
   score: number;
   updated: string;

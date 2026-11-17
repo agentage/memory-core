@@ -7,7 +7,7 @@ This repo grew up as **`store-core`** and was renamed to `memory-core`; it publi
 different `0.5.x` engine - no upgrade path, different API. That old engine repo is archived as
 `agentage/archive_memory-core`; do not port code from it.
 
-Consumers: `@agentage/server-memory` (stdio MCP) and the memory service in `agentage/memory`. A
+Consumers: `@agentage/server-memory` (stdio MCP) and the memory service (`agentage/memory`, now in `~/projects/agentage-old/memory`) and `agentage/extension-memory`. A
 contract change here is a fan-out - rebuild and check both.
 
 ## Architecture
@@ -30,13 +30,14 @@ CI: PR = full `verify` incl. perf @1000 notes. Nightly = perf @5000 + deep fuzz.
 
 ## Documented >200-line exemptions
 
-House rule is files < 200 lines (`~/vaults/engineering/standards/code-style.md`). These four are deliberate:
+House rule is files < 200 lines (`~/vaults/engineering/standards/code-style.md`). These five are deliberate:
 
 - `src/conformance/contract-suite.ts` (683) - one shipped spec; splitting it splits the guarantee.
 - `src/stores/bare-git/bare-git-store.ts` (335) - the reference store; its verbs share one
   snapshot/commit closure that costs more to thread across files than to read in one.
 - `src/stores/bare-git/git-run.ts` (213) - the whole hermetic-spawn boundary (env voiding, timeouts,
   byte caps, `unavailable` mapping) in one auditable place.
+- `src/router/router.ts` (224) - one `@vault/path` ref parser and fan-out; the permission fail-fast stays in one reader's view.
 - `src/stores/memory-store.ts` (227) - the reference implementation, kept a mirror of the contract's
   own ordering so a reader can diff the two by eye.
 

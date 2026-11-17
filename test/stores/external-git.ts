@@ -32,7 +32,7 @@ export const runGit = (
     if (input !== undefined) child.stdin?.end(input);
   });
 
-export interface ExternalChange {
+interface ExternalChange {
   path: string;
   content?: string;
   mode?: string;
