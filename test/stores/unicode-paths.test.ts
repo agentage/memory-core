@@ -24,6 +24,15 @@ describe('Git-backed memory: Unicode path regression', () => {
     expect((await fresh.read(ACCENTED_PATH))?.body).toContain('CHAVEUNICODE7X9');
   });
 
+  it('round-trips a CJK and mixed-script path through write, list and read', async () => {
+    const path = 'notes/café ü 日本.md';
+    const repo = await repoFor();
+    await createBareGitStore(repo).write({ path, body: 'mixed script body' });
+    const fresh = createBareGitStore(repo);
+    expect((await fresh.list({ folder: 'notes' })).entries.map((e) => e.path)).toContain(path);
+    expect((await fresh.read(path))?.body).toContain('mixed script body');
+  });
+
   it('reconciles a Unicode path added and removed by an external push (drift)', async () => {
     const repo = await repoFor();
     const store = createBareGitStore(repo);
