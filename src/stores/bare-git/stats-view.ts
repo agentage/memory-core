@@ -29,12 +29,12 @@ export const computeVaultStats = async (
   version: string | null
 ): Promise<VaultStats> => {
   if (!version) return EMPTY;
-  const stdout = await runnerOf(target).tryRun(['ls-tree', '-r', '-t', '-l', version]);
+  const stdout = await runnerOf(target).tryRun(['ls-tree', '-r', '-t', '-l', '-z', version]);
   if (stdout === null) return EMPTY;
   let files = 0;
   let folders = 0;
   let sizeBytes = 0;
-  for (const line of stdout.split('\n')) {
+  for (const line of stdout.split('\0')) {
     if (!line) continue;
     const [, type, , size] = line.slice(0, line.indexOf('\t')).trim().split(/\s+/);
     if (type === 'blob') {
