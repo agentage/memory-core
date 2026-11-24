@@ -36,9 +36,9 @@ import type { VaultStore } from '../contract/vault-store.js';
 // A leading @<vault> addresses one vault; `@<vault>` alone is that vault's root.
 const VAULT_PREFIX = /^@([^/]+)(?:\/(.*))?$/;
 
-// FROZEN CLIENT CONTRACT: the cli regex-matches this text (memory-core parity).
+// Names no tool: the host serves the tool under its own prefix.
 export const unknownVaultMessage = (vault: string): string =>
-  `Unknown vault "@${vault}". Use memory__list with no folder to see available vaults.`;
+  `Unknown vault "@${vault}". Use the list tool with no folder to see available vaults.`;
 
 // Every verb addresses by ref, and every path it returns is one.
 export interface Router {
