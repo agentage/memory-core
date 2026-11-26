@@ -9,8 +9,8 @@ import { StoreError } from '../../src/index.js';
 import { createRouter, unknownVaultMessage, type Router } from '../../src/router/router.js';
 import { world, type World } from './harness.js';
 
-// The exact text the CLI regex-matches (memory-core parity) - byte-frozen.
-const GOLDEN = 'Unknown vault "@ghost". Use memory__list with no folder to see available vaults.';
+// Golden text of the unknown-vault error.
+const GOLDEN = 'Unknown vault "@ghost". Use the list tool with no folder to see available vaults.';
 
 const seeds = {
   main: [{ path: 'a.md', body: 'main zebra' }],
