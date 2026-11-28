@@ -5,6 +5,7 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/agentage/memory-core/ci.yml?branch=master&label=CI)](https://github.com/agentage/memory-core/actions/workflows/ci.yml)
 [![Node](https://img.shields.io/badge/node-%3E%3D22-3c873a.svg)](https://nodejs.org)
 [![agentage.io](https://img.shields.io/badge/by-agentage.io-e0a234.svg)](https://agentage.io)
+[![Agentage Memory on StartupScores](https://startupscores.com/badge/agentage-memory.svg?style=shield&v=combo&theme=dark)](https://startupscores.com/open-source/agentage-memory)
 
 Give your AI a memory it can read, write and search - stored as plain markdown files you own.
 
